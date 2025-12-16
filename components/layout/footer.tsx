@@ -40,7 +40,7 @@ export function Footer() {
 
         <div className="mt-6 border-t border-border pt-6 text-center">
           <p className="text-xs text-muted-foreground/70">
-            © {new Date().getFullYear()} CrowdMint. Built on Arc Network.
+            © {new Date().getFullYear()} CrowdMint. Built on Arc Network. All rights reserved.
           </p>
         </div>
       </div>
