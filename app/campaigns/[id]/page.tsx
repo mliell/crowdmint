@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ProgressBar } from "@/components/campaign/progress-bar"
 import { CampaignStatusBadge } from "@/components/campaign/campaign-status-badge"
-import { useAccount, useConnect, useDisconnect } from "wagmi"
+import { useAccount, useConnect } from "wagmi"
 import { injected } from "wagmi/connectors"
 import { useWeb3Clients } from "@/hooks/use-web3-client"
 import { useUsdcBalance } from "@/hooks/use-usdc-balance"
@@ -37,10 +37,12 @@ export default function CampaignDetailsPage({
   const { address, isConnected } = useAccount()
   const { publicClient, walletClient } = useWeb3Clients()
   const { connect: wagmiConnect } = useConnect()
-  const { disconnect } = useDisconnect()
 
   const connect = () => {
-    wagmiConnect({ connector: injconst { balance: usdcBalance, isLoading: isLoadingBalance } = useUsdcBalance()
+    wagmiConnect({ connector: injected() })
+  }
+
+  const { balance: usdcBalance, isLoading: isLoadingBalance } = useUsdcBalance()
   const [donationAmount, setDonationAmount] = useState("")
   const [isDonating, setIsDonating] = useState(false)
   const [isApproving, setIsApproving] = useState(false)
@@ -64,20 +66,17 @@ export default function CampaignDetailsPage({
   )
 
   const handleDonate = async () => {
-    // Validação inicial
     if (!isConnected || !address || !donationAmount || !campaign) {
       toast.error("Please connect your wallet and enter a donation amount")
       return
     }
 
-    // Espera até 3 segundos pelo walletClient se necessário
     let attempts = 0
     let currentWalletClient = walletClient
     while (!currentWalletClient && attempts < 6) {
       console.log(`⏳ Waiting for walletClient... attempt ${attempts + 1}/6`)
       await new Promise(resolve => setTimeout(resolve, 500))
       attempts++
-      // Re-check walletClient após o delay
       currentWalletClient = walletClient
     }
 
@@ -92,9 +91,8 @@ export default function CampaignDetailsPage({
     }
 
     try {
-      const amount = parseUnits(donationAmount, 6) // USDC has 6 decimals
+      const amount = parseUnits(donationAmount, 6)
 
-      // Validate minimum contribution
       if (campaign.minContributionUsdc > 0 && Number(donationAmount) < campaign.minContributionUsdc) {
         toast.error(
           `Minimum contribution is ${formatUsdc(campaign.minContributionUsdc)} USDC. Please increase your donation amount.`,
@@ -102,7 +100,6 @@ export default function CampaignDetailsPage({
         return
       }
 
-      // Check if approval is needed (approve to campaign contract)
       setIsApproving(true)
       let currentAllowance = 0n
 
@@ -115,10 +112,8 @@ export default function CampaignDetailsPage({
       }
 
       if (currentAllowance < amount) {
-        // Calculate the exact amount needed to approve
         const amountToApprove = amount - currentAllowance
 
-        // Approve USDC spending to campaign contract (only the amount needed)
         toast.info(`Approving ${formatUsdc(Number(formatUnits(amountToApprove, 6)))} USDC...`)
         try {
           const approveHash = await approveUsdc(
@@ -129,7 +124,6 @@ export default function CampaignDetailsPage({
           )
           toast.success(`Approval transaction sent: ${approveHash.slice(0, 10)}...`)
 
-          // Wait for approval transaction to be mined
           await publicClient.waitForTransactionReceipt({ hash: approveHash })
           toast.success("USDC approved successfully!")
         } catch (error: any) {
@@ -145,7 +139,6 @@ export default function CampaignDetailsPage({
       setIsApproving(false)
       setIsDonating(true)
 
-      // Donate to campaign
       toast.info("Processing donation...")
       const donateHash = await donateToCampaign(
         campaign.address,
@@ -155,7 +148,6 @@ export default function CampaignDetailsPage({
       )
       toast.success(`Donation transaction sent: ${donateHash.slice(0, 10)}...`)
 
-      // Wait for donation transaction to be mined
       await publicClient.waitForTransactionReceipt({ hash: donateHash })
       toast.success("Donation successful!")
 
@@ -163,7 +155,6 @@ export default function CampaignDetailsPage({
       setDonationSuccess(true)
       setDonationAmount("")
 
-      // Refresh campaign data
       mutate()
     } catch (error: any) {
       console.error("Error donating:", error)
@@ -212,7 +203,6 @@ export default function CampaignDetailsPage({
 
   return (
     <div className="container mx-auto px-4 py-8 md:py-12">
-      {/* Back button */}
       <Button asChild variant="ghost" className="mb-6 text-carbon-clarity hover:text-deep-trust">
         <Link href="/campaigns">
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -220,7 +210,6 @@ export default function CampaignDetailsPage({
         </Link>
       </Button>
 
-      {/* Header */}
       <div className="mb-8">
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <CampaignStatusBadge status={campaign.status} goalBased={campaign.goalBased} />
@@ -240,16 +229,13 @@ export default function CampaignDetailsPage({
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
-        {/* Main Content */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Image */}
           {campaign.imageUrl && (
             <div className="relative aspect-video rounded-xl overflow-hidden bg-crowd-silver">
               <Image src={campaign.imageUrl || "/placeholder.svg"} alt={campaign.title} fill className="object-cover" />
             </div>
           )}
 
-          {/* Description */}
           <Card className="border-crowd-silver">
             <CardHeader>
               <CardTitle className="text-deep-trust">About this campaign</CardTitle>
@@ -261,7 +247,6 @@ export default function CampaignDetailsPage({
             </CardContent>
           </Card>
 
-          {/* On-chain details */}
           <Card className="border-crowd-silver">
             <CardHeader>
               <CardTitle className="text-deep-trust">On-chain Details</CardTitle>
@@ -295,12 +280,9 @@ export default function CampaignDetailsPage({
           </Card>
         </div>
 
-        {/* Sidebar */}
         <div className="space-y-6">
-          {/* Status Card */}
           <Card className="border-crowd-silver sticky top-24">
             <CardContent className="p-6 space-y-6">
-              {/* Funding progress */}
               <div>
                 <div className="flex items-baseline justify-between mb-2">
                   <span className="text-2xl font-bold text-deep-trust">{formatUsdc(campaign.raisedUsdc)} USDC</span>
@@ -309,7 +291,6 @@ export default function CampaignDetailsPage({
                 <ProgressBar percent={progress} size="md" showLabel />
               </div>
 
-              {/* Stats */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="text-center p-3 rounded-lg bg-crowd-silver/50">
                   <div className="flex items-center justify-center gap-1 text-carbon-clarity mb-1">
@@ -327,7 +308,6 @@ export default function CampaignDetailsPage({
                 </div>
               </div>
 
-              {/* Donation form */}
               <div className="pt-4 border-t border-crowd-silver">
                 {!isConnected ? (
                   <div className="text-center">
