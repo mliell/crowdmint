@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { useAccount, useConnect, useWalletClient } from "wagmi"
+import { useAccount, useConnect } from "wagmi"
 import { injected } from "wagmi/connectors"
+import { useWeb3Clients } from "@/hooks/use-web3-client"
 import { CAMPAIGN_CATEGORIES } from "@/types/campaign"
 import { formatUsdc } from "@/lib/campaigns"
 import { createCampaign } from "@/lib/contracts"
@@ -36,7 +37,7 @@ interface FormData {
 export default function CreateCampaignPage() {
   const router = useRouter()
   const { address, isConnected } = useAccount()
-  const { data: walletClient } = useWalletClient()
+  const { walletClient } = useWeb3Clients()
   const { connect } = useConnect()
 
   const handleConnect = () => {
@@ -110,6 +111,8 @@ export default function CreateCampaignPage() {
       console.log(`⏳ Waiting for walletClient... attempt ${attempts + 1}/6`)
       await new Promise(resolve => setTimeout(resolve, 500))
       attempts++
+      // Re-check walletClient após o delay
+      currentWalletClient = walletClient
     }
 
     if (!currentWalletClient) {
@@ -163,7 +166,7 @@ export default function CreateCampaignPage() {
         metadataURI,
         minContribution,
         currentWalletClient,
-        address, // <-- ADICIONE O ADDRESS AQUI
+        address,
       )
 
       setTxHash(hash)

@@ -4,8 +4,9 @@ import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { CampaignCard } from "@/components/campaign/campaign-card"
-import { useAccount, useConnect, usePublicClient, useWalletClient } from "wagmi"
+import { useAccount, useConnect } from "wagmi"
 import { injected } from "wagmi/connectors"
+import { useWeb3Clients } from "@/hooks/use-web3-client"
 import { fetchCampaignsByCreator, shortenAddress } from "@/lib/campaigns"
 import { withdrawFromCampaign } from "@/lib/contracts"
 import type { Campaign } from "@/types/campaign"
@@ -15,8 +16,7 @@ import { toast } from "sonner"
 
 export default function MyCampaignsPage() {
   const { address, isConnected } = useAccount()
-  const publicClient = usePublicClient()
-  const { data: walletClient } = useWalletClient()
+  const { publicClient, walletClient } = useWeb3Clients()
   const { connect } = useConnect()
 
   const handleConnect = () => {
@@ -41,6 +41,8 @@ export default function MyCampaignsPage() {
       console.log(`⏳ Waiting for walletClient... attempt ${attempts + 1}/6`)
       await new Promise(resolve => setTimeout(resolve, 500))
       attempts++
+      // Re-check walletClient após o delay
+      currentWalletClient = walletClient
     }
 
     if (!currentWalletClient) {
@@ -56,9 +58,9 @@ export default function MyCampaignsPage() {
     try {
       toast.info("Processing withdrawal...")
       const hash = await withdrawFromCampaign(
-        campaignAddress as `0x${string}`, 
-        currentWalletClient, 
-        address // <-- ADICIONE O ADDRESS AQUI
+        campaignAddress as `0x${string}`,
+        currentWalletClient,
+        address
       )
       toast.success(`Withdrawal transaction sent: ${hash.slice(0, 10)}...`)
 
