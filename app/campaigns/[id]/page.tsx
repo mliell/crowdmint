@@ -1,3 +1,4 @@
+// app/campaigns/[id]/page.tsx
 "use client"
 
 import { use } from "react"
@@ -53,17 +54,17 @@ export default function CampaignDetailsPage({
   )
 
   const handleDonate = async () => {
-  
-    if (!isConnected || !donationAmount || !campaign || !address) {
+    // Validação inicial
+    if (!isConnected || !address || !donationAmount || !campaign) {
       toast.error("Please connect your wallet and enter a donation amount")
       return
     }
 
-    // Validação do walletClient E do account
-  if (!walletClient || !walletClient.account) {
-    toast.error("Wallet client not ready. Please try again in a moment.")
-    return
-  }
+    // Validação do walletClient (SEM checar .account)
+    if (!walletClient) {
+      toast.error("Wallet client not ready. Please try again in a moment.")
+      return
+    }
 
     if (!publicClient) {
       toast.error("Web3 client is not available. Please refresh the page.")
@@ -84,36 +85,33 @@ export default function CampaignDetailsPage({
       // Check if approval is needed (approve to campaign contract)
       setIsApproving(true)
       let currentAllowance = 0n
-      
+
       try {
-        // Verify publicClient is available before calling
-        if (!publicClient) {
-          throw new Error("Public client is not available")
-        }
-        
         currentAllowance = await readUsdcAllowance(address, campaign.address, publicClient)
       } catch (error: any) {
         console.error("Error reading allowance:", error)
         toast.warning("Could not check allowance. Proceeding with approval...")
-        // If reading allowance fails, assume we need to approve
         currentAllowance = 0n
       }
 
       if (currentAllowance < amount) {
         // Calculate the exact amount needed to approve
         const amountToApprove = amount - currentAllowance
-        
+
         // Approve USDC spending to campaign contract (only the amount needed)
         toast.info(`Approving ${formatUsdc(Number(formatUnits(amountToApprove, 6)))} USDC...`)
         try {
-          const approveHash = await approveUsdc(campaign.address, amountToApprove, walletClient)
+          const approveHash = await approveUsdc(
+            campaign.address,
+            amountToApprove,
+            walletClient,
+            address // <-- PASSE O ADDRESS AQUI
+          )
           toast.success(`Approval transaction sent: ${approveHash.slice(0, 10)}...`)
 
           // Wait for approval transaction to be mined
-          if (publicClient) {
-            await publicClient.waitForTransactionReceipt({ hash: approveHash })
-            toast.success("USDC approved successfully!")
-          }
+          await publicClient.waitForTransactionReceipt({ hash: approveHash })
+          toast.success("USDC approved successfully!")
         } catch (error: any) {
           console.error("Error approving USDC:", error)
           toast.error(error?.message || "Failed to approve USDC. Please try again.")
@@ -129,7 +127,12 @@ export default function CampaignDetailsPage({
 
       // Donate to campaign
       toast.info("Processing donation...")
-      const donateHash = await donateToCampaign(campaign.address, amount, walletClient)
+      const donateHash = await donateToCampaign(
+        campaign.address,
+        amount,
+        walletClient,
+        address // <-- PASSE O ADDRESS AQUI
+      )
       toast.success(`Donation transaction sent: ${donateHash.slice(0, 10)}...`)
 
       // Wait for donation transaction to be mined
