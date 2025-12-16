@@ -10,12 +10,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ProgressBar } from "@/components/campaign/progress-bar"
 import { CampaignStatusBadge } from "@/components/campaign/campaign-status-badge"
-import { useWallet } from "@/components/providers/web3-provider"
-import { useWeb3Clients } from "@/hooks/use-web3-client"
+//import { useWallet } from "@/components/providers/web3-provider"
+//import { useWeb3Clients } from "@/hooks/use-web3-client"
+import { useAccount, usePublicClient, useWalletClient, useConnect, useDisconnect } from "wagmi"
+import { injected } from "wagmi/connectors"
+
 import { useUsdcBalance } from "@/hooks/use-usdc-balance"
-const { isConnected, address, connect } = useWallet()
-const { publicClient, walletClient } = useWeb3Clients()
-const { balance: usdcBalance, isLoading: isLoadingBalance } = useUsdcBalance()
 import {
   fetchCampaignByAddress,
   formatUsdc,
@@ -39,13 +39,30 @@ export default function CampaignDetailsPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = use(params)
-  const { isConnected, address, connect } = useWallet()
-  const { publicClient, walletClient } = useWeb3Clients()
+  //const { isConnected, address, connect } = useWallet()
+  //const { publicClient, walletClient } = useWeb3Clients()
+  const { address, isConnected } = useAccount()
+  const publicClient = usePublicClient()
+  const { data: walletClient } = useWalletClient()
+  const { connect: wagmiConnect } = useConnect()
+  const { disconnect } = useDisconnect()
+  const connect = () => {
+    wagmiConnect({ connector: injected() })
+  }
+
   const { balance: usdcBalance, isLoading: isLoadingBalance } = useUsdcBalance()
   const [donationAmount, setDonationAmount] = useState("")
   const [isDonating, setIsDonating] = useState(false)
   const [isApproving, setIsApproving] = useState(false)
   const [donationSuccess, setDonationSuccess] = useState(false)
+
+  // Debug log
+  console.log("🔍 Component state:", {
+    isConnected,
+    address,
+    hasPublicClient: !!publicClient,
+    hasWalletClient: !!walletClient,
+  })
 
   const {
     data: campaign,
@@ -58,29 +75,28 @@ export default function CampaignDetailsPage({
 
   const handleDonate = async () => {
     // Validação inicial
-    console.log("🔍 Debug complete state:", {
-      isConnected,
-      address,
-      hasPublicClient: !!publicClient,
-      hasWalletClient: !!walletClient,
-      walletClientType: walletClient ? typeof walletClient : "undefined",
-      walletClientKeys: walletClient ? Object.keys(walletClient).slice(0, 10) : [],
-    })
-    if (!isConnected || !address || !donationAmount || !campaign) {
-      toast.error("Please connect your wallet and enter a donation amount")
-      return
-    }
+  if (!isConnected || !address || !donationAmount || !campaign) {
+    toast.error("Please connect your wallet and enter a donation amount")
+    return
+  }
 
-    // Validação do walletClient (SEM checar .account)
-    if (!walletClient) {
-      toast.error("Wallet client not ready. Please try again in a moment.")
-      return
-    }
+  // Espera até 3 segundos pelo walletClient se necessário
+  let attempts = 0
+  while (!walletClient && attempts < 6) {
+    console.log(`⏳ Waiting for walletClient... attempt ${attempts + 1}/6`)
+    await new Promise(resolve => setTimeout(resolve, 500))
+    attempts++
+  }
 
-    if (!publicClient) {
-      toast.error("Web3 client is not available. Please refresh the page.")
-      return
-    }
+  if (!walletClient) {
+    toast.error("Wallet client not ready. Please try disconnecting and reconnecting your wallet.")
+    return
+  }
+
+  if (!publicClient) {
+    toast.error("Web3 client is not available. Please refresh the page.")
+    return
+  }
 
     try {
       const amount = parseUnits(donationAmount, 6) // USDC has 6 decimals
