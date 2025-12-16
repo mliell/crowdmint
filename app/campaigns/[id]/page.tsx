@@ -9,10 +9,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ProgressBar } from "@/components/campaign/progress-bar"
 import { CampaignStatusBadge } from "@/components/campaign/campaign-status-badge"
-import { useAccount, useConnect } from "wagmi"
+import { useAccount, useConnect, useSwitchChain } from "wagmi"
 import { injected } from "wagmi/connectors"
 import { useWeb3Clients } from "@/hooks/use-web3-client"
 import { useUsdcBalance } from "@/hooks/use-usdc-balance"
+import { arcTestnet } from "@/config/web3"
 import {
   fetchCampaignByAddress,
   formatUsdc,
@@ -34,9 +35,10 @@ export default function CampaignDetailsPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = use(params)
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, chain } = useAccount()
   const { publicClient, walletClient } = useWeb3Clients()
   const { connect: wagmiConnect } = useConnect()
+  const { switchChainAsync } = useSwitchChain()
 
   const connect = () => {
     wagmiConnect({ connector: injected() })
@@ -54,6 +56,8 @@ export default function CampaignDetailsPage({
     address,
     hasPublicClient: !!publicClient,
     hasWalletClient: !!walletClient,
+    currentChainId: chain?.id,
+    expectedChainId: arcTestnet.id,
   })
 
   const {
@@ -69,6 +73,21 @@ export default function CampaignDetailsPage({
     if (!isConnected || !address || !donationAmount || !campaign) {
       toast.error("Please connect your wallet and enter a donation amount")
       return
+    }
+
+    // Verificar e trocar rede se necessário
+    if (chain?.id !== arcTestnet.id) {
+      try {
+        toast.info(`Switching to ${arcTestnet.name}...`)
+        await switchChainAsync({ chainId: arcTestnet.id })
+        toast.success("Network switched successfully!")
+        // Aguarde um pouco para a rede estabilizar
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      } catch (error: any) {
+        console.error("Error switching network:", error)
+        toast.error(`Please switch to ${arcTestnet.name} manually in your wallet`)
+        return
+      }
     }
 
     let attempts = 0
