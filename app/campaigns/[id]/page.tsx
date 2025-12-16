@@ -53,15 +53,17 @@ export default function CampaignDetailsPage({
   )
 
   const handleDonate = async () => {
-    
+    console.log("🔍 Pre-validation:", {
+      isConnected,
+      hasAddress: !!address,
+      hasDonationAmount: !!donationAmount,
+      hasCampaign: !!campaign,
+      hasWalletClient: !!walletClient,
+      hasPublicClient: !!publicClient,
+    })
+  
     if (!isConnected || !donationAmount || !campaign || !walletClient || !address) {
-      console.log("🔍 Debug ENV:", {
-        rpcUrl: process.env.NEXT_PUBLIC_RPC_URL,
-        chainId: process.env.NEXT_PUBLIC_CHAIN_ID,
-        factoryAddress: process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
-        usdcAddress: process.env.NEXT_PUBLIC_USDC_ADDRESS,
-        address: address, // da carteira conectada
-      })
+      console.log("❌ Validation failed - one or more conditions not met")
       toast.error("Please connect your wallet and enter a donation amount")
       return
     }
