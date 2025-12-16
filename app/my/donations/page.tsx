@@ -3,8 +3,8 @@
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { useWallet } from "@/components/providers/web3-provider"
-import { useWeb3Clients } from "@/hooks/use-web3-client"
+import { useAccount, useConnect, usePublicClient } from "wagmi"
+import { injected } from "wagmi/connectors"
 import { fetchDonationsByUser, formatUsdc } from "@/lib/campaigns"
 import type { Donation } from "@/types/campaign"
 import { Wallet, ExternalLink, Heart } from "lucide-react"
@@ -18,8 +18,13 @@ const statusColors: Record<Donation["campaignStatus"], string> = {
 }
 
 export default function MyDonationsPage() {
-  const { isConnected, address, connect } = useWallet()
-  const { publicClient } = useWeb3Clients()
+  const { address, isConnected } = useAccount()
+  const publicClient = usePublicClient()
+  const { connect } = useConnect()
+
+  const handleConnect = () => {
+    connect({ connector: injected() })
+  }
 
   const { data: donations = [], isLoading } = useSWR<Donation[]>(
     isConnected && address && publicClient ? `my-donations-${address}` : null,
@@ -35,7 +40,7 @@ export default function MyDonationsPage() {
           </div>
           <h1 className="text-2xl font-bold text-deep-trust mb-4">Connect Your Wallet</h1>
           <p className="text-carbon-clarity mb-8">Connect your wallet to view your donation history.</p>
-          <Button onClick={connect} className="bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold">
+          <Button onClick={handleConnect} className="bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold">
             <Wallet className="mr-2 h-4 w-4" />
             Connect Wallet
           </Button>

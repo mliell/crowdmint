@@ -4,8 +4,8 @@ import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { CampaignCard } from "@/components/campaign/campaign-card"
-import { useWallet } from "@/components/providers/web3-provider"
-import { useWeb3Clients } from "@/hooks/use-web3-client"
+import { useAccount, useConnect, usePublicClient, useWalletClient } from "wagmi"
+import { injected } from "wagmi/connectors"
 import { fetchCampaignsByCreator, shortenAddress } from "@/lib/campaigns"
 import { withdrawFromCampaign } from "@/lib/contracts"
 import type { Campaign } from "@/types/campaign"
@@ -14,8 +14,14 @@ import useSWR from "swr"
 import { toast } from "sonner"
 
 export default function MyCampaignsPage() {
-  const { isConnected, address, connect } = useWallet()
-  const { publicClient, walletClient } = useWeb3Clients()
+  const { address, isConnected } = useAccount()
+  const publicClient = usePublicClient()
+  const { data: walletClient } = useWalletClient()
+  const { connect } = useConnect()
+
+  const handleConnect = () => {
+    connect({ connector: injected() })
+  }
 
   const { data: campaigns = [], isLoading, mutate } = useSWR<Campaign[]>(
     isConnected && address && publicClient ? `my-campaigns-${address}` : null,
@@ -23,14 +29,37 @@ export default function MyCampaignsPage() {
   )
 
   const handleWithdraw = async (campaignAddress: string) => {
-    if (!walletClient || !publicClient) {
+    if (!isConnected || !address) {
       toast.error("Please connect your wallet")
+      return
+    }
+
+    // Aguarda walletClient por até 3 segundos
+    let attempts = 0
+    let currentWalletClient = walletClient
+    while (!currentWalletClient && attempts < 6) {
+      console.log(`⏳ Waiting for walletClient... attempt ${attempts + 1}/6`)
+      await new Promise(resolve => setTimeout(resolve, 500))
+      attempts++
+    }
+
+    if (!currentWalletClient) {
+      toast.error("Wallet client not ready. Please disconnect and reconnect your wallet, then try again.")
+      return
+    }
+
+    if (!publicClient) {
+      toast.error("Web3 client is not available. Please refresh the page.")
       return
     }
 
     try {
       toast.info("Processing withdrawal...")
-      const hash = await withdrawFromCampaign(campaignAddress as `0x${string}`, walletClient)
+      const hash = await withdrawFromCampaign(
+        campaignAddress as `0x${string}`, 
+        currentWalletClient, 
+        address // <-- ADICIONE O ADDRESS AQUI
+      )
       toast.success(`Withdrawal transaction sent: ${hash.slice(0, 10)}...`)
 
       // Wait for transaction to be mined
@@ -54,7 +83,7 @@ export default function MyCampaignsPage() {
           </div>
           <h1 className="text-2xl font-bold text-deep-trust mb-4">Connect Your Wallet</h1>
           <p className="text-carbon-clarity mb-8">Connect your wallet to view and manage your campaigns.</p>
-          <Button onClick={connect} className="bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold">
+          <Button onClick={handleConnect} className="bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold">
             <Wallet className="mr-2 h-4 w-4" />
             Connect Wallet
           </Button>

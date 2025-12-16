@@ -2,15 +2,22 @@
 
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useWallet } from "@/components/providers/web3-provider"
+import { useAccount, useConnect, useDisconnect } from "wagmi"
+import { injected } from "wagmi/connectors"
 import { shortenAddress } from "@/lib/campaigns"
 import { Wallet, LogOut, Copy, ExternalLink } from "lucide-react"
 import { getAddressExplorerUrl } from "@/config/web3"
 import { useState } from "react"
 
 export function ConnectWalletButton() {
-  const { isConnected, address, connect, disconnect, isConnecting } = useWallet()
+  const { address, isConnected } = useAccount()
+  const { connect, isPending: isConnecting } = useConnect()
+  const { disconnect } = useDisconnect()
   const [copied, setCopied] = useState(false)
+
+  const handleConnect = () => {
+    connect({ connector: injected() })
+  }
 
   const copyAddress = () => {
     if (address) {
@@ -23,7 +30,7 @@ export function ConnectWalletButton() {
   if (!isConnected) {
     return (
       <Button
-        onClick={connect}
+        onClick={handleConnect}
         disabled={isConnecting}
         className="bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold"
       >
@@ -57,7 +64,7 @@ export function ConnectWalletButton() {
             View on Explorer
           </a>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={disconnect} className="text-red-600">
+        <DropdownMenuItem onClick={() => disconnect()} className="text-red-600">
           <LogOut className="mr-2 h-4 w-4" />
           Disconnect
         </DropdownMenuItem>

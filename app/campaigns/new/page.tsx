@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
@@ -11,8 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { useWallet } from "@/components/providers/web3-provider"
-import { useWeb3Clients } from "@/hooks/use-web3-client"
+import { useAccount, useConnect, useWalletClient } from "wagmi"
+import { injected } from "wagmi/connectors"
 import { CAMPAIGN_CATEGORIES } from "@/types/campaign"
 import { formatUsdc } from "@/lib/campaigns"
 import { createCampaign } from "@/lib/contracts"
@@ -36,8 +35,14 @@ interface FormData {
 
 export default function CreateCampaignPage() {
   const router = useRouter()
-  const { isConnected, address, connect } = useWallet()
-  const { walletClient } = useWeb3Clients()
+  const { address, isConnected } = useAccount()
+  const { data: walletClient } = useWalletClient()
+  const { connect } = useConnect()
+
+  const handleConnect = () => {
+    connect({ connector: injected() })
+  }
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null)
@@ -93,8 +98,22 @@ export default function CreateCampaignPage() {
 
     if (!validate()) return
 
-    if (!walletClient || !address) {
+    if (!isConnected || !address) {
       toast.error("Please connect your wallet")
+      return
+    }
+
+    // Aguarda walletClient por até 3 segundos
+    let attempts = 0
+    let currentWalletClient = walletClient
+    while (!currentWalletClient && attempts < 6) {
+      console.log(`⏳ Waiting for walletClient... attempt ${attempts + 1}/6`)
+      await new Promise(resolve => setTimeout(resolve, 500))
+      attempts++
+    }
+
+    if (!currentWalletClient) {
+      toast.error("Wallet client not ready. Please disconnect and reconnect your wallet, then try again.")
       return
     }
 
@@ -112,7 +131,7 @@ export default function CreateCampaignPage() {
 
       // Upload metadata (for now, returns data URI)
       const metadataURI = await uploadMetadataToIPFS(metadata)
-      
+
       // Log metadata for debugging
       console.log("Creating campaign with metadata:", metadata)
       console.log("Metadata URI:", metadataURI)
@@ -136,14 +155,15 @@ export default function CreateCampaignPage() {
         metadataURI,
         minContribution: minContribution.toString(),
       })
-      
+
       const hash = await createCampaign(
         goalAmount,
         deadline,
         formData.type === "goal-based",
         metadataURI,
         minContribution,
-        walletClient,
+        currentWalletClient,
+        address, // <-- ADICIONE O ADDRESS AQUI
       )
 
       setTxHash(hash)
@@ -168,7 +188,7 @@ export default function CreateCampaignPage() {
           </div>
           <h1 className="text-2xl font-bold text-deep-trust mb-4">Connect Your Wallet</h1>
           <p className="text-carbon-clarity mb-8">You need to connect your wallet to create a campaign on CrowdMint.</p>
-          <Button onClick={connect} className="bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold">
+          <Button onClick={handleConnect} className="bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold">
             <Wallet className="mr-2 h-4 w-4" />
             Connect Wallet
           </Button>
