@@ -13,6 +13,9 @@ import { CampaignStatusBadge } from "@/components/campaign/campaign-status-badge
 import { useWallet } from "@/components/providers/web3-provider"
 import { useWeb3Clients } from "@/hooks/use-web3-client"
 import { useUsdcBalance } from "@/hooks/use-usdc-balance"
+const { isConnected, address, connect } = useWallet()
+const { publicClient, walletClient } = useWeb3Clients()
+const { balance: usdcBalance, isLoading: isLoadingBalance } = useUsdcBalance()
 import {
   fetchCampaignByAddress,
   formatUsdc,
@@ -55,6 +58,14 @@ export default function CampaignDetailsPage({
 
   const handleDonate = async () => {
     // Validação inicial
+    console.log("🔍 Debug complete state:", {
+      isConnected,
+      address,
+      hasPublicClient: !!publicClient,
+      hasWalletClient: !!walletClient,
+      walletClientType: walletClient ? typeof walletClient : "undefined",
+      walletClientKeys: walletClient ? Object.keys(walletClient).slice(0, 10) : [],
+    })
     if (!isConnected || !address || !donationAmount || !campaign) {
       toast.error("Please connect your wallet and enter a donation amount")
       return
