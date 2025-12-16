@@ -1,30 +1,29 @@
 // hooks/use-web3-client.ts
 "use client"
 
-import { useMemo } from "react"
-import { usePublicClient, useAccount, useConnectorClient } from "wagmi"
-import { createPublicClient, http, createWalletClient, custom } from "viem"
+import { usePublicClient, useConnectorClient } from "wagmi"
+import { createPublicClient, http } from "viem"
 import { arcTestnet } from "@/config/web3"
 
 export function useWeb3Clients() {
   const publicClient = usePublicClient()
-  const { address } = useAccount()
   const { data: connectorClient } = useConnectorClient()
 
-  // Cria wallet client a partir do connector client
-  const walletClient = useMemo(() => {
-    if (!connectorClient || !address) return undefined
-
-    return createWalletClient({
-       arcTestnet,
-      transport: custom(connectorClient.transport),
-    })
-  }, [connectorClient, address])
+  // O connectorClient do wagmi já é um wallet client válido
+  // Não precisamos criar um novo, apenas retorná-lo
+  const walletClient = connectorClient
 
   // Fallback: create a public client directly if wagmi's usePublicClient is undefined
   const fallbackPublicClient = publicClient || createPublicClient({
     chain: arcTestnet,
     transport: http(),
+  })
+
+  // Debug log
+  console.log("🔧 useWeb3Clients:", {
+    hasPublicClient: !!fallbackPublicClient,
+    hasConnectorClient: !!connectorClient,
+    connectorClientType: connectorClient ? typeof connectorClient : "undefined",
   })
 
   return {
