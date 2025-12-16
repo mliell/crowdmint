@@ -53,17 +53,8 @@ export default function CampaignDetailsPage({
   )
 
   const handleDonate = async () => {
-    console.log("🔍 Pre-validation:", {
-      isConnected,
-      hasAddress: !!address,
-      hasDonationAmount: !!donationAmount,
-      hasCampaign: !!campaign,
-      hasWalletClient: !!walletClient,
-      hasPublicClient: !!publicClient,
-    })
   
-    if (!isConnected || !donationAmount || !campaign || !walletClient || !address) {
-      console.log("❌ Validation failed - one or more conditions not met")
+    if (!isConnected || !donationAmount || !campaign || !address) {
       toast.error("Please connect your wallet and enter a donation amount")
       return
     }
