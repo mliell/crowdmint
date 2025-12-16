@@ -59,6 +59,12 @@ export default function CampaignDetailsPage({
       return
     }
 
+    // Validação do walletClient E do account
+  if (!walletClient || !walletClient.account) {
+    toast.error("Wallet client not ready. Please try again in a moment.")
+    return
+  }
+
     if (!publicClient) {
       toast.error("Web3 client is not available. Please refresh the page.")
       return
