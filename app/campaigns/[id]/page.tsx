@@ -50,15 +50,6 @@ export default function CampaignDetailsPage({
   const [isApproving, setIsApproving] = useState(false)
   const [donationSuccess, setDonationSuccess] = useState(false)
 
-  // Debug log
-  console.log("🔍 Component state:", {
-    isConnected,
-    address,
-    hasPublicClient: !!publicClient,
-    hasWalletClient: !!walletClient,
-    currentChainId: chain?.id,
-    expectedChainId: arcTestnet.id,
-  })
 
   const {
     data: campaign,
@@ -93,7 +84,6 @@ export default function CampaignDetailsPage({
     let attempts = 0
     let currentWalletClient = walletClient
     while (!currentWalletClient && attempts < 6) {
-      console.log(`⏳ Waiting for walletClient... attempt ${attempts + 1}/6`)
       await new Promise(resolve => setTimeout(resolve, 500))
       attempts++
       currentWalletClient = walletClient

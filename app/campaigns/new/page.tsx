@@ -122,7 +122,6 @@ export default function CreateCampaignPage() {
     let attempts = 0
     let currentWalletClient = walletClient
     while (!currentWalletClient && attempts < 6) {
-      console.log(`⏳ Waiting for walletClient... attempt ${attempts + 1}/6`)
       await new Promise(resolve => setTimeout(resolve, 500))
       attempts++
       currentWalletClient = walletClient

@@ -47,13 +47,6 @@ export function useWeb3Clients() {
     transport: http(),
   })
 
-  console.log("🔧 useWeb3Clients:", {
-    hasPublicClient: !!fallbackPublicClient,
-    hasConnectorClient: !!connectorClient,
-    hasWalletClient: !!walletClient,
-    isConnected,
-    hasWindowEthereum: typeof window !== "undefined" && !!window.ethereum,
-  })
 
   return {
     publicClient: fallbackPublicClient,

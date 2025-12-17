@@ -18,7 +18,7 @@ export function getUsdcContract(publicClient: PublicClient) {
   if (!contracts.usdc) {
     throw new Error("USDC contract address not configured")
   }
-  console.log("getUsdcContract: publicClient recebido:", publicClient)
+
   const contractInstance = getContract({
     address: contracts.usdc,
     abi: erc20Abi,
