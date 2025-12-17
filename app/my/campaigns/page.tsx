@@ -4,9 +4,10 @@ import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { CampaignCard } from "@/components/campaign/campaign-card"
-import { useAccount, useConnect } from "wagmi"
+import { useAccount, useConnect, useSwitchChain } from "wagmi"
 import { injected } from "wagmi/connectors"
 import { useWeb3Clients } from "@/hooks/use-web3-client"
+import { arcTestnet } from "@/config/web3"
 import { fetchCampaignsByCreator, shortenAddress } from "@/lib/campaigns"
 import { withdrawFromCampaign } from "@/lib/contracts"
 import type { Campaign } from "@/types/campaign"
@@ -15,9 +16,10 @@ import useSWR from "swr"
 import { toast } from "sonner"
 
 export default function MyCampaignsPage() {
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, chain } = useAccount()
   const { publicClient, walletClient } = useWeb3Clients()
   const { connect } = useConnect()
+  const { switchChainAsync } = useSwitchChain()
 
   const handleConnect = () => {
     connect({ connector: injected() })
@@ -34,14 +36,26 @@ export default function MyCampaignsPage() {
       return
     }
 
-    // Aguarda walletClient por até 3 segundos
+    // Verificar e trocar rede se necessário
+    if (chain?.id !== arcTestnet.id) {
+      try {
+        toast.info(`Switching to ${arcTestnet.name}...`)
+        await switchChainAsync({ chainId: arcTestnet.id })
+        toast.success("Network switched successfully!")
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      } catch (error: any) {
+        console.error("Error switching network:", error)
+        toast.error(`Please switch to ${arcTestnet.name} manually in your wallet`)
+        return
+      }
+    }
+
     let attempts = 0
     let currentWalletClient = walletClient
     while (!currentWalletClient && attempts < 6) {
       console.log(`⏳ Waiting for walletClient... attempt ${attempts + 1}/6`)
       await new Promise(resolve => setTimeout(resolve, 500))
       attempts++
-      // Re-check walletClient após o delay
       currentWalletClient = walletClient
     }
 
@@ -64,11 +78,9 @@ export default function MyCampaignsPage() {
       )
       toast.success(`Withdrawal transaction sent: ${hash.slice(0, 10)}...`)
 
-      // Wait for transaction to be mined
       await publicClient.waitForTransactionReceipt({ hash })
       toast.success("Withdrawal successful!")
 
-      // Refresh campaigns
       mutate()
     } catch (error: any) {
       console.error("Error withdrawing:", error)
@@ -96,7 +108,6 @@ export default function MyCampaignsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 md:py-12">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl md:text-4xl font-bold text-deep-trust mb-2">My Campaigns</h1>
@@ -112,7 +123,6 @@ export default function MyCampaignsPage() {
         </Button>
       </div>
 
-      {/* Content */}
       {isLoading ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(3)].map((_, i) => (
@@ -142,7 +152,6 @@ export default function MyCampaignsPage() {
           {campaigns.map((campaign) => (
             <div key={campaign.address} className="relative">
               <CampaignCard campaign={campaign} />
-              {/* Withdraw button overlay for eligible campaigns */}
               {campaign.isExpired && !campaign.withdrawn && (campaign.hasReachedGoal || !campaign.goalBased) && (
                 <div className="absolute bottom-4 left-4 right-4">
                   <Button

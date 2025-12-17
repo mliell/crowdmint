@@ -10,9 +10,10 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { useAccount, useConnect } from "wagmi"
+import { useAccount, useConnect, useSwitchChain } from "wagmi"
 import { injected } from "wagmi/connectors"
 import { useWeb3Clients } from "@/hooks/use-web3-client"
+import { arcTestnet } from "@/config/web3"
 import { CAMPAIGN_CATEGORIES } from "@/types/campaign"
 import { formatUsdc } from "@/lib/campaigns"
 import { createCampaign } from "@/lib/contracts"
@@ -36,9 +37,10 @@ interface FormData {
 
 export default function CreateCampaignPage() {
   const router = useRouter()
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, chain } = useAccount()
   const { walletClient } = useWeb3Clients()
   const { connect } = useConnect()
+  const { switchChainAsync } = useSwitchChain()
 
   const handleConnect = () => {
     connect({ connector: injected() })
@@ -63,7 +65,6 @@ export default function CreateCampaignPage() {
 
   const updateField = (field: keyof FormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    // Clear error when field is updated
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }))
     }
@@ -104,14 +105,26 @@ export default function CreateCampaignPage() {
       return
     }
 
-    // Aguarda walletClient por até 3 segundos
+    // Verificar e trocar rede se necessário
+    if (chain?.id !== arcTestnet.id) {
+      try {
+        toast.info(`Switching to ${arcTestnet.name}...`)
+        await switchChainAsync({ chainId: arcTestnet.id })
+        toast.success("Network switched successfully!")
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      } catch (error: any) {
+        console.error("Error switching network:", error)
+        toast.error(`Please switch to ${arcTestnet.name} manually in your wallet`)
+        return
+      }
+    }
+
     let attempts = 0
     let currentWalletClient = walletClient
     while (!currentWalletClient && attempts < 6) {
       console.log(`⏳ Waiting for walletClient... attempt ${attempts + 1}/6`)
       await new Promise(resolve => setTimeout(resolve, 500))
       attempts++
-      // Re-check walletClient após o delay
       currentWalletClient = walletClient
     }
 
@@ -123,7 +136,6 @@ export default function CreateCampaignPage() {
     setIsSubmitting(true)
 
     try {
-      // Prepare metadata
       const metadata = {
         title: formData.title,
         shortDescription: formData.shortDescription,
@@ -132,25 +144,17 @@ export default function CreateCampaignPage() {
         category: formData.category || undefined,
       }
 
-      // Upload metadata (for now, returns data URI)
       const metadataURI = await uploadMetadataToIPFS(metadata)
 
-      // Log metadata for debugging
       console.log("Creating campaign with metadata:", metadata)
       console.log("Metadata URI:", metadataURI)
 
-      // Convert goal amount to USDC (6 decimals)
       const goalAmount = parseUnits(formData.goalAmount, 6)
-
-      // Convert deadline to unix timestamp (seconds)
       const deadline = BigInt(Math.floor(new Date(formData.deadline).getTime() / 1000))
-
-      // Convert min contribution to USDC (6 decimals), default to 0 if empty
       const minContribution = formData.minContribution
         ? parseUnits(formData.minContribution, 6)
         : parseUnits("0", 6)
 
-      // Create campaign
       console.log("Campaign parameters:", {
         goal: goalAmount.toString(),
         deadline: deadline.toString(),
@@ -173,7 +177,6 @@ export default function CreateCampaignPage() {
       setIsSuccess(true)
       toast.success("Campaign created successfully!")
 
-      // Wait a bit for transaction to be mined
       await new Promise((resolve) => setTimeout(resolve, 3000))
     } catch (error: any) {
       console.error("Error creating campaign:", error)
@@ -248,7 +251,6 @@ export default function CreateCampaignPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 md:py-12">
-      {/* Back button */}
       <Button asChild variant="ghost" className="mb-6 text-carbon-clarity hover:text-deep-trust">
         <Link href="/campaigns">
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -261,9 +263,7 @@ export default function CreateCampaignPage() {
         <p className="text-carbon-clarity mb-8">Launch your project and connect with backers from around the world.</p>
 
         <div className="grid lg:grid-cols-5 gap-8">
-          {/* Form */}
           <form onSubmit={handleSubmit} className="lg:col-span-3 space-y-6">
-            {/* Title */}
             <div className="space-y-2">
               <Label htmlFor="title" className="text-carbon-clarity">
                 Campaign Title <span className="text-red-500">*</span>
@@ -278,7 +278,6 @@ export default function CreateCampaignPage() {
               {errors.title && <p className="text-xs text-red-500">{errors.title}</p>}
             </div>
 
-            {/* Short description */}
             <div className="space-y-2">
               <Label htmlFor="shortDescription" className="text-carbon-clarity">
                 Short Description <span className="text-red-500">*</span>
@@ -296,7 +295,6 @@ export default function CreateCampaignPage() {
               {errors.shortDescription && <p className="text-xs text-red-500">{errors.shortDescription}</p>}
             </div>
 
-            {/* Long description */}
             <div className="space-y-2">
               <Label htmlFor="longDescription" className="text-carbon-clarity">
                 Full Description
@@ -311,7 +309,6 @@ export default function CreateCampaignPage() {
               />
             </div>
 
-            {/* Goal and deadline */}
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="goalAmount" className="text-carbon-clarity">
@@ -345,7 +342,6 @@ export default function CreateCampaignPage() {
               </div>
             </div>
 
-            {/* Minimum contribution */}
             <div className="space-y-2">
               <Label htmlFor="minContribution" className="text-carbon-clarity">
                 Minimum Contribution (USDC)
@@ -365,7 +361,6 @@ export default function CreateCampaignPage() {
               </p>
             </div>
 
-            {/* Campaign type */}
             <div className="space-y-3">
               <Label className="text-carbon-clarity">
                 Campaign Type <span className="text-red-500">*</span>
@@ -408,12 +403,10 @@ export default function CreateCampaignPage() {
               </RadioGroup>
             </div>
 
-            {/* Category */}
             <div className="space-y-2">
               <Label htmlFor="category" className="text-carbon-clarity">
                 Category <span className="text-red-500">*</span>
-              </Label>
-              <Select value={formData.category} onValueChange={(value) => updateField("category", value)}>
+              </Label>={formData.category} onValueChange={(value) => updateField("category", value)}>
                 <SelectTrigger
                   className={`border-crowd-silver focus:border-deep-trust ${errors.category ? "border-red-500" : ""}`}
                 >
@@ -430,7 +423,6 @@ export default function CreateCampaignPage() {
               {errors.category && <p className="text-xs text-red-500">{errors.category}</p>}
             </div>
 
-            {/* Image URL */}
             <div className="space-y-2">
               <Label htmlFor="imageUrl" className="text-carbon-clarity">
                 Image URL (optional)
@@ -446,7 +438,6 @@ export default function CreateCampaignPage() {
               <p className="text-xs text-carbon-clarity">Provide a URL to an image for your campaign banner.</p>
             </div>
 
-            {/* Submit */}
             <Button
               type="submit"
               disabled={isSubmitting}
@@ -456,7 +447,6 @@ export default function CreateCampaignPage() {
             </Button>
           </form>
 
-          {/* Preview card */}
           <div className="lg:col-span-2">
             <div className="sticky top-24">
               <h3 className="text-sm font-semibold text-carbon-clarity mb-4">Preview</h3>
