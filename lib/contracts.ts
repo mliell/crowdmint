@@ -2,9 +2,10 @@
 "use client"
 
 import { PublicClient, getContract, type Address } from "viem"
+import { writeContract } from "viem/actions"
 import { usePublicClient, useWalletClient } from "wagmi"
 import { erc20Abi, campaignFactoryAbi, campaignAbi } from "@/contracts/abis"
-import { contracts } from "@/config/web3"
+import { contracts, arcTestnet } from "@/config/web3"
 import type { CampaignDetailsOnChain } from "@/types/campaign"
 
 /**
@@ -17,15 +18,12 @@ export function getUsdcContract(publicClient: PublicClient) {
   if (!contracts.usdc) {
     throw new Error("USDC contract address not configured")
   }
-
   console.log("getUsdcContract: publicClient recebido:", publicClient)
-
   const contractInstance = getContract({
     address: contracts.usdc,
     abi: erc20Abi,
     client: publicClient,
   })
-
   return contractInstance
 }
 
@@ -39,7 +37,6 @@ export function getFactoryContract(publicClient: PublicClient) {
   if (!contracts.factory) {
     throw new Error("Factory contract address not configured")
   }
-
   return getContract({
     address: contracts.factory,
     abi: campaignFactoryAbi,
@@ -54,7 +51,6 @@ export function getCampaignContract(address: Address, publicClient: PublicClient
   if (!publicClient) {
     throw new Error("Public client is not available")
   }
-
   return getContract({
     address,
     abi: campaignAbi,
@@ -70,7 +66,6 @@ export async function readCampaignDetails(
   publicClient: PublicClient,
 ): Promise<CampaignDetailsOnChain> {
   const campaign = getCampaignContract(campaignAddress, publicClient)
-
   const details = (await campaign.read.details()) as readonly [
     Address, // creator
     bigint, // goal
@@ -122,10 +117,10 @@ export async function readUsdcAllowance(
   try {
     const usdc = getUsdcContract(publicClient)
     if (!usdc || !usdc.read) {
-      console.error("Debug: usdc instance in readUsdcAllowance", { 
-        usdc, 
-        hasRead: !!usdc?.read, 
-        publicClient 
+      console.error("Debug: usdc instance in readUsdcAllowance", {
+        usdc,
+        hasRead: !!usdc?.read,
+        publicClient,
       })
       throw new Error("Failed to get USDC contract instance")
     }
@@ -136,7 +131,7 @@ export async function readUsdcAllowance(
       spender,
       usdcAddress: contracts.usdc,
       error: error.message || error,
-      publicClientStatus: publicClient ? "available" : "unavailable"
+      publicClientStatus: publicClient ? "available" : "unavailable",
     })
     throw error
   }
@@ -163,14 +158,14 @@ export async function approveUsdc(
     throw new Error("USDC contract address not configured")
   }
 
-  const hash = await walletClient.writeContract({
+  const hash = await writeContract(walletClient, {
     address: contracts.usdc,
     abi: erc20Abi,
     functionName: "approve",
     args: [spender, amount],
     account,
+    chain: arcTestnet,
   })
-
   return hash
 }
 
@@ -190,14 +185,14 @@ export async function createCampaign(
     throw new Error("Factory contract address not configured")
   }
 
-  const hash = await walletClient.writeContract({
+  const hash = await writeContract(walletClient, {
     address: contracts.factory,
     abi: campaignFactoryAbi,
     functionName: "createCampaign",
     args: [goal, deadline, goalBased, metadataURI, minContribution],
     account,
+    chain: arcTestnet,
   })
-
   return hash
 }
 
@@ -210,14 +205,14 @@ export async function donateToCampaign(
   walletClient: any,
   account: Address,
 ): Promise<`0x${string}`> {
-  const hash = await walletClient.writeContract({
+  const hash = await writeContract(walletClient, {
     address: campaignAddress,
     abi: campaignAbi,
     functionName: "donate",
     args: [amount],
     account,
+    chain: arcTestnet,
   })
-
   return hash
 }
 
@@ -229,14 +224,14 @@ export async function withdrawFromCampaign(
   walletClient: any,
   account: Address,
 ): Promise<`0x${string}`> {
-  const hash = await walletClient.writeContract({
+  const hash = await writeContract(walletClient, {
     address: campaignAddress,
     abi: campaignAbi,
     functionName: "withdraw",
     args: [],
     account,
+    chain: arcTestnet,
   })
-
   return hash
 }
 
@@ -248,14 +243,14 @@ export async function refundDonation(
   walletClient: any,
   account: Address,
 ): Promise<`0x${string}`> {
-  const hash = await walletClient.writeContract({
+  const hash = await writeContract(walletClient, {
     address: campaignAddress,
     abi: campaignAbi,
     functionName: "requestRefund",
     args: [],
     account,
+    chain: arcTestnet,
   })
-
   return hash
 }
 
@@ -266,7 +261,6 @@ export async function getAllCampaigns(publicClient: PublicClient): Promise<Addre
   if (!contracts.factory) {
     throw new Error("Factory contract address not configured")
   }
-
   const factory = getFactoryContract(publicClient)
   return (await factory.read.getCampaigns()) as Address[]
 }
@@ -281,25 +275,23 @@ export async function getCampaignsByCreator(
   if (!contracts.factory) {
     throw new Error("Factory contract address not configured")
   }
-
   const factory = getFactoryContract(publicClient)
-  const allCampaignAddresses = await factory.read.getCampaigns() as Address[]
+  const allCampaignAddresses = (await factory.read.getCampaigns()) as Address[]
   const creatorCampaignAddresses: Address[] = []
 
   for (const address of allCampaignAddresses) {
     const campaign = getCampaignContract(address, publicClient)
     const details = (await campaign.read.details()) as readonly [
       Address, // creator
-      bigint,  // goal
-      bigint,  // deadline
-      bigint,  // amountRaised
+      bigint, // goal
+      bigint, // deadline
+      bigint, // amountRaised
       boolean, // goalBased
       boolean, // withdrawn
-      string,  // metadataURI
+      string, // metadataURI
       boolean, // active
-      bigint   // minContribution
+      bigint, // minContribution
     ]
-
     if (details[0].toLowerCase() === creator.toLowerCase()) {
       creatorCampaignAddresses.push(address)
     }
