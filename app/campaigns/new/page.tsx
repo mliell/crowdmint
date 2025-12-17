@@ -406,7 +406,8 @@ export default function CreateCampaignPage() {
             <div className="space-y-2">
               <Label htmlFor="category" className="text-carbon-clarity">
                 Category <span className="text-red-500">*</span>
-              </Label>={formData.category} onValueChange={(value) => updateField("category", value)}>
+                </Label>
+                <Select value={formData.category} onValueChange={(value) => updateField("category", value)}>
                 <SelectTrigger
                   className={`border-crowd-silver focus:border-deep-trust ${errors.category ? "border-red-500" : ""}`}
                 >
