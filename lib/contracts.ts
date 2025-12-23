@@ -3,7 +3,6 @@
 
 import { PublicClient, getContract, type Address } from "viem"
 import { writeContract } from "viem/actions"
-import { usePublicClient, useWalletClient } from "wagmi"
 import { erc20Abi, campaignFactoryAbi, campaignAbi } from "@/contracts/abis"
 import { contracts, arcTestnet } from "@/config/web3"
 import type { CampaignDetailsOnChain } from "@/types/campaign"
@@ -18,7 +17,6 @@ export function getUsdcContract(publicClient: PublicClient) {
   if (!contracts.usdc) {
     throw new Error("USDC contract address not configured")
   }
-
   const contractInstance = getContract({
     address: contracts.usdc,
     abi: erc20Abi,
@@ -163,7 +161,6 @@ export async function approveUsdc(
     abi: erc20Abi,
     functionName: "approve",
     args: [spender, amount],
-    account,
     chain: arcTestnet,
   })
   return hash
@@ -190,7 +187,6 @@ export async function createCampaign(
     abi: campaignFactoryAbi,
     functionName: "createCampaign",
     args: [goal, deadline, goalBased, metadataURI, minContribution],
-    account,
     chain: arcTestnet,
   })
   return hash
@@ -210,7 +206,6 @@ export async function donateToCampaign(
     abi: campaignAbi,
     functionName: "donate",
     args: [amount],
-    account,
     chain: arcTestnet,
   })
   return hash
@@ -229,7 +224,6 @@ export async function withdrawFromCampaign(
     abi: campaignAbi,
     functionName: "withdraw",
     args: [],
-    account,
     chain: arcTestnet,
   })
   return hash
@@ -248,7 +242,6 @@ export async function refundDonation(
     abi: campaignAbi,
     functionName: "requestRefund",
     args: [],
-    account,
     chain: arcTestnet,
   })
   return hash
