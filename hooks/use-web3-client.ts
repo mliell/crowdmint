@@ -24,7 +24,6 @@ export function useWeb3Clients() {
       // Fallback: se conectado mas sem connectorClient, use window.ethereum diretamente
       if (isConnected && address && typeof window !== "undefined" && window.ethereum) {
         try {
-          console.log("⚠️ Fallback: Creating walletClient from window.ethereum")
           const client = createWalletClient({
             account: address,
             chain: arcTestnet,
