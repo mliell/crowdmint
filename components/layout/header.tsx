@@ -15,6 +15,7 @@ const navLinks = [
   { href: "/campaigns", label: "Campaigns" },
   { href: "/my/campaigns", label: "My Campaigns" },
   { href: "/my/donations", label: "My Donations" },
+  { href: "/docs", label: "Docs" },
 ]
 
 export function Header() {

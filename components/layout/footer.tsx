@@ -37,6 +37,12 @@ export function Footer() {
               >
                 Create
               </Link>
+              <Link
+                href="/docs"
+                className="text-sm text-muted-foreground transition-colors hover:text-deep-trust"
+              >
+                Docs
+              </Link>
             </div>
 
             {/* Social Links */}
