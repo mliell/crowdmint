@@ -3,13 +3,14 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
-import "./Campaign.sol";
+import "./Campaign.sol"; // Importado para criar novas campanhas e para o cast em registerExistingCampaigns
 import "./CrowdMintVault.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract CampaignFactory is Ownable, Pausable, ReentrancyGuard {
     address public immutable USDC_TOKEN;
-    address public platformFeeCollector;
+    address public platformFeeCollector; // Removido 'immutable' para permitir setFeeCollector
     address public immutable crowdMintVault;
 
     event CampaignCreated(
@@ -19,10 +20,12 @@ contract CampaignFactory is Ownable, Pausable, ReentrancyGuard {
         uint256 deadline,
         bool goalBased,
         string metadataURI,
-        uint256 minContribution // NOVO: Adicionado ao evento
+        uint256 minContribution
     );
     event UnclaimedFundsVaultUpdated(address indexed oldVault, address indexed newVault);
     event FundsTransferredToVault(address indexed campaign, address indexed vault, uint256 amount, string reason);
+    event PlatformFeeCollectorUpdated(address indexed oldCollector, address indexed newCollector);
+    event CampaignRegistered(address indexed campaignAddress, address indexed creator); // NOVO: Evento para campanhas registradas
 
     address[] public campaigns;
     mapping(address => bool) public isValidCampaign;
@@ -35,6 +38,7 @@ contract CampaignFactory is Ownable, Pausable, ReentrancyGuard {
         USDC_TOKEN = _usdcToken;
         platformFeeCollector = _feeCollector;
         crowdMintVault = _crowdMintVault;
+        // campaignRegistry = _campaignRegistry; // Descomente se você decidir usar um CampaignRegistry universal
     }
 
     /**
@@ -51,17 +55,14 @@ contract CampaignFactory is Ownable, Pausable, ReentrancyGuard {
         uint256 _deadline,
         bool _goalBased,
         string memory _metadataURI,
-        uint256 _minContribution // NOVO: Parâmetro para contribuição mínima
+        uint256 _minContribution
     ) external whenNotPaused returns (address) {
         require(_goal > 0, "Goal must be greater than 0");
         require(_deadline > block.timestamp, "Deadline must be in the future");
         require(_deadline <= block.timestamp + 365 days, "Deadline too far (max 1 year)");
         require(bytes(_metadataURI).length > 0, "Metadata URI required");
-        // Não há require para _minContribution > 0 aqui, pois é opcional.
-        // Se for 0, significa que não há mínimo (ou o mínimo é 1 wei, dependendo da interpretação do front-end).
 
-        uint256 goalInWei = _goal; // Assumindo que _goal já está na menor unidade (e.g., 1e6 para USDC com 6 decimais)
-
+        uint256 goalInWei = _goal;
         Campaign newCampaign = new Campaign(
             goalInWei,
             _deadline,
@@ -72,9 +73,8 @@ contract CampaignFactory is Ownable, Pausable, ReentrancyGuard {
             address(this),
             platformFeeCollector,
             crowdMintVault,
-            _minContribution // NOVO: Passa o valor mínimo para o construtor da campanha
+            _minContribution
         );
-
         campaigns.push(address(newCampaign));
         isValidCampaign[address(newCampaign)] = true;
         campaignCount++;
@@ -86,16 +86,34 @@ contract CampaignFactory is Ownable, Pausable, ReentrancyGuard {
             _deadline,
             _goalBased,
             _metadataURI,
-            _minContribution // NOVO: Emite o valor mínimo no evento
+            _minContribution
         );
         return address(newCampaign);
     }
 
+    /**
+     * @notice Permite ao owner atualizar o endereço do coletor de taxas da plataforma.
+     * @dev Isso afetará apenas as campanhas criadas APÓS esta atualização.
+     *      Campanhas existentes manterão o platformFeeCollector com o qual foram criadas.
+     * @param _newCollector O novo endereço para o coletor de taxas da plataforma.
+     */
     function setFeeCollector(address _newCollector) external onlyOwner {
         require(_newCollector != address(0), "Invalid address");
+        address oldCollector = platformFeeCollector;
         platformFeeCollector = _newCollector;
+        emit PlatformFeeCollectorUpdated(oldCollector, _newCollector);
     }
 
+    /**
+     * @notice Puxa fundos de uma campanha e os deposita diretamente no CrowdMintVault.
+     * @dev Apenas campanhas válidas podem chamar esta função.
+     *      O Factory atua como intermediário para puxar os fundos da campanha (que aprovou o Factory)
+     *      e enviá-los diretamente para o Vault, garantindo atomicidade.
+     * @param _campaignAddress O endereço do contrato da campanha.
+     * @param _amount O valor a ser transferido.
+     * @param _depositType O tipo de depósito (CampaignFunds ou RefundFunds).
+     * @param _originalClaimer O endereço do criador da campanha ou do doador original.
+     */
     function transferToVaultFromCampaign(
         address _campaignAddress,
         uint256 _amount,
@@ -106,7 +124,10 @@ contract CampaignFactory is Ownable, Pausable, ReentrancyGuard {
         require(_campaignAddress == msg.sender, "Campaign address mismatch");
         require(_amount > 0, "Amount must be greater than 0");
 
-        require(IERC20(USDC_TOKEN).transferFrom(_campaignAddress, address(this), _amount), "Factory: USDC transfer from campaign failed");
+        require(
+            IERC20(USDC_TOKEN).transferFrom(_campaignAddress, crowdMintVault, _amount),
+            "Factory: USDC transfer from campaign to vault failed"
+        );
 
         if (_depositType == CrowdMintVault.DepositType.CampaignFunds) {
             CrowdMintVault(crowdMintVault).depositCampaignFunds(_originalClaimer, _amount);
@@ -115,7 +136,40 @@ contract CampaignFactory is Ownable, Pausable, ReentrancyGuard {
         } else {
             revert("Invalid deposit type");
         }
+
         emit FundsTransferredToVault(_campaignAddress, crowdMintVault, _amount, "Funds moved to vault");
+    }
+
+    /**
+     * @notice Permite ao owner registrar contratos de campanha existentes.
+     * @dev Esta função é destinada a cenários de migração ao atualizar o CampaignFactory.
+     *      Ela adiciona endereços de campanhas pré-existentes às listas de rastreamento do factory.
+     *      Apenas o owner pode chamar esta função.
+     * @param _campaignAddresses Um array de endereços de contratos de campanha já implantados.
+     */
+    function registerExistingCampaigns(address[] calldata _campaignAddresses) external onlyOwner {
+        require(_campaignAddresses.length > 0, "No campaign addresses provided");
+
+        for (uint256 i = 0; i < _campaignAddresses.length; i++) {
+            address campaignAddr = _campaignAddresses[i];
+            require(campaignAddr != address(0), "Invalid campaign address at index");
+            require(!isValidCampaign[campaignAddr], "Campaign already registered");
+
+            // Opcional: Adicione uma verificação para garantir que é um contrato Campaign válido.
+            // Isso pode aumentar o custo de gás no loop, mas melhora a segurança.
+            // Por exemplo, chame uma função de view que só existe em Campaign.
+            // Se a campanha não tiver um owner(), você pode usar outra função.
+            // Ex: Campaign(campaignAddr).usdcToken(); // Reverterá se não for um Campaign
+            // Ou, para ser mais leve, confie que os endereços fornecidos são válidos.
+
+            campaigns.push(campaignAddr);
+            isValidCampaign[campaignAddr] = true;
+            campaignCount++;
+
+            // Emite um evento para cada campanha registrada
+            // Assumindo que Campaign(campaignAddr).owner() é acessível e retorna o criador
+            emit CampaignRegistered(campaignAddr, Campaign(campaignAddr).owner());
+        }
     }
 
     function getCampaigns() external view returns (address[] memory) {
@@ -125,6 +179,14 @@ contract CampaignFactory is Ownable, Pausable, ReentrancyGuard {
     function getCampaign(uint256 _index) external view returns (address) {
         require(_index < campaigns.length, "Invalid index");
         return campaigns[_index];
+    }
+
+    /**
+     * @notice Retorna o número total de campanhas rastreadas por este factory.
+     * @dev Inclui campanhas criadas e campanhas registradas manualmente.
+     */
+    function getCampaignsLength() external view returns (uint256) {
+        return campaigns.length;
     }
 
     function pause() public onlyOwner {
