@@ -20,7 +20,7 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
         bool withdrawn;
         string metadataURI;
         bool active;
-        uint256 minContribution; // NOVO: Contribuição mínima para esta campanha
+        uint256 minContribution;
     }
 
     CampaignDetails public details;
@@ -29,7 +29,7 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
     address public immutable crowdMintVault;
 
     mapping(address => uint256) public donations;
-    address[] public donors;
+    address[] public donors; // Array para listar todos os doadores
 
     uint256 public campaignEndedTimestamp;
 
@@ -38,8 +38,10 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
     event RefundRequested(address indexed donor, uint256 amount);
     event CampaignEnded(bool success);
     event FundsSentToVault(address indexed recipient, uint256 amount, string reason);
+    event UnclaimedFundsSwept(address indexed originalClaimer, uint256 amount, CrowdMintVault.DepositType depositType);
+    event PlatformWithdrawalFeeCollected(address indexed collector, uint256 amount); // Novo evento para a taxa de saque
 
-    uint256 private constant WITHDRAWAL_GRACE_PERIOD = 6 * 30 days;
+    uint256 private constant WITHDRAWAL_GRACE_PERIOD = 6 * 30 days; // 6 meses
 
     modifier campaignActive() {
         require(block.timestamp < details.deadline, "Campaign expired");
@@ -62,7 +64,7 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
         address _factory,
         address _feeCollector,
         address _crowdMintVault,
-        uint256 _minContribution // NOVO: Parâmetro para contribuição mínima
+        uint256 _minContribution
     ) Ownable(_creator) {
         require(_deadline > block.timestamp, "Invalid deadline");
         require(_usdcToken != address(0), "Invalid USDC address");
@@ -84,16 +86,18 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
             withdrawn: false,
             metadataURI: _metadataURI,
             active: true,
-            minContribution: _minContribution // NOVO: Atribui o valor mínimo
+            minContribution: _minContribution
         });
+
         campaignEndedTimestamp = 0;
+
+        // Aprovação ilimitada para o Factory puxar fundos quando necessário (unclaimed pipeline)
+        require(usdcToken.approve(_factory, type(uint256).max), "Approve to factory failed");
     }
 
     function donate(uint256 _amount) external whenNotPaused campaignActive nonReentrant {
         require(_amount > 0, "Amount must be greater than 0");
-        // NOVO: Valida a contribuição mínima
         require(_amount >= details.minContribution, "Donation below minimum contribution");
-
         require(usdcToken.transferFrom(msg.sender, address(this), _amount), "USDC transfer failed");
 
         if (donations[msg.sender] == 0) {
@@ -113,6 +117,7 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
 
     function withdraw() external onlyOwner campaignExpired nonReentrant {
         require(!details.withdrawn, "Already withdrawn");
+
         uint256 amountToTransfer = 0;
         bool success = false;
 
@@ -129,7 +134,7 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
         if (success && amountToTransfer > 0) {
             details.withdrawn = true;
             if (block.timestamp >= details.deadline + WITHDRAWAL_GRACE_PERIOD) {
-                require(usdcToken.transfer(factory, amountToTransfer), "Transfer to factory for vault failed");
+                // Fundos não reclamados, varridos para o Vault
                 CampaignFactory(factory).transferToVaultFromCampaign(
                     address(this),
                     amountToTransfer,
@@ -138,12 +143,26 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
                 );
                 emit FundsSentToVault(crowdMintVault, amountToTransfer, "Campaign funds not withdrawn in time");
             } else {
-                require(usdcToken.transfer(details.creator, amountToTransfer), "Withdraw failed");
-                emit Withdrawn(details.creator, amountToTransfer);
+                // Saque normal pelo criador dentro do período de carência
+                // Implementação da taxa de 0.5%
+                uint256 platformWithdrawalFee = (amountToTransfer * 50) / 10000; // 0.5%
+                uint256 netAmountToCreator = amountToTransfer - platformWithdrawalFee;
+
+                // Transferir a taxa para o coletor de taxas da plataforma
+                require(usdcToken.transfer(platformFeeCollector, platformWithdrawalFee), "Platform withdrawal fee transfer failed");
+                emit PlatformWithdrawalFeeCollected(platformFeeCollector, platformWithdrawalFee);
+
+                // Transferir o valor líquido para o criador
+                require(usdcToken.transfer(details.creator, netAmountToCreator), "Withdraw failed");
+                emit Withdrawn(details.creator, netAmountToCreator);
             }
         } else {
             if (campaignEndedTimestamp == 0) {
                 campaignEndedTimestamp = block.timestamp;
+            }
+            // Emit CampaignEnded(false) se o goalBased não atingiu a meta e não há fundos para sacar
+            if (details.goalBased && details.amountRaised < details.goal) {
+                emit CampaignEnded(false);
             }
         }
     }
@@ -158,7 +177,7 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
         details.amountRaised -= amount;
 
         if (block.timestamp >= details.deadline + WITHDRAWAL_GRACE_PERIOD) {
-            require(usdcToken.transfer(factory, amount), "Transfer to factory for vault failed");
+            // Fundos não reclamados, varridos para o Vault
             CampaignFactory(factory).transferToVaultFromCampaign(
                 address(this),
                 amount,
@@ -172,10 +191,67 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
         }
     }
 
+    /**
+     * @notice Permite que qualquer pessoa acione o envio de fundos não reclamados para o Vault
+     *         após o período de carência, para o criador ou para um doador específico.
+     * @dev Esta função é permissionless para garantir que os fundos sejam movidos automaticamente.
+     *      Ela verifica se o período de carência expirou e se os fundos ainda não foram reclamados.
+     * @param _originalClaimer O endereço do criador ou do doador cujos fundos serão varridos.
+     * @param _depositType O tipo de depósito (CampaignFunds ou RefundFunds).
+     */
+    function sweepUnclaimedFunds(address _originalClaimer, CrowdMintVault.DepositType _depositType) external nonReentrant {
+        require(block.timestamp >= details.deadline + WITHDRAWAL_GRACE_PERIOD, "Grace period not over yet");
+        uint256 amountToSweep = 0;
+
+        if (_depositType == CrowdMintVault.DepositType.CampaignFunds) {
+            require(_originalClaimer == details.creator, "Invalid claimer for campaign funds");
+            require(!details.withdrawn, "Campaign funds already withdrawn"); // Verifica se já foi sacado/varrido
+
+            // Verifica se a campanha é elegível para saque (meta batida ou flexível)
+            bool eligibleForWithdrawal = false;
+            if (details.goalBased) {
+                if (details.amountRaised >= details.goal) {
+                    eligibleForWithdrawal = true;
+                }
+            } else {
+                eligibleForWithdrawal = true;
+            }
+            require(eligibleForWithdrawal, "Campaign funds not eligible for sweep (goal not met for goal-based)");
+
+            amountToSweep = details.amountRaised;
+            details.withdrawn = true; // Marca como varrido para evitar duplicação
+        } else if (_depositType == CrowdMintVault.DepositType.RefundFunds) {
+            require(details.goalBased, "Not a goal-based campaign for refund sweep");
+            require(details.amountRaised < details.goal, "Goal was met, no refunds due");
+            require(donations[_originalClaimer] > 0, "No unclaimed donation for this donor");
+
+            amountToSweep = donations[_originalClaimer];
+            donations[_originalClaimer] = 0; // Zera a doação do doador
+            details.amountRaised -= amountToSweep; // Ajusta o total arrecadado
+        } else {
+            revert("Invalid deposit type for sweep");
+        }
+
+        require(amountToSweep > 0, "No funds to sweep");
+
+        CampaignFactory(factory).transferToVaultFromCampaign(
+            address(this),
+            amountToSweep,
+            _depositType,
+            _originalClaimer
+        );
+        emit UnclaimedFundsSwept(_originalClaimer, amountToSweep, _depositType);
+    }
+
     function endCampaign() external onlyOwner campaignExpired {
         if (campaignEndedTimestamp == 0) {
             campaignEndedTimestamp = block.timestamp;
-            emit CampaignEnded(false);
+            details.active = false; // NOVO: Define a campanha como inativa
+            if (details.goalBased && details.amountRaised < details.goal) {
+                emit CampaignEnded(false);
+            } else if (!details.goalBased || details.amountRaised >= details.goal) {
+                emit CampaignEnded(true);
+            }
         }
     }
 
@@ -183,9 +259,13 @@ contract Campaign is Ownable, ReentrancyGuard, Pausable {
         raised = details.amountRaised;
         goal = details.goal;
         if (details.goal == 0) {
+            // Para campanhas flexíveis sem meta numérica, a porcentagem pode ser 100% ou 0%
+            // dependendo da representação desejada. Se for uma campanha flexível,
+            // geralmente se considera que ela "atingiu" seu objetivo de ser flexível.
+            // Para manter a consistência com o cálculo de porcentagem, 0 é uma opção segura.
             percentage = 0;
         } else {
-            if (details.amountRaised >= type(uint256).max / 100) {
+            if (details.amountRaised >= details.goal) {
                 percentage = 100;
             } else {
                 percentage = (details.amountRaised * 100) / details.goal;
