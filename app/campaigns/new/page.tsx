@@ -22,6 +22,8 @@ import { parseUnits } from "viem"
 import { Wallet, ArrowLeft, CheckCircle } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
+import { ImageUpload } from "@/components/campaign/image-upload"
+import { CampaignWarning } from "@/components/campaign/campaign-warning"
 
 interface FormData {
   title: string
@@ -50,6 +52,8 @@ export default function CreateCampaignPage() {
   const [isSuccess, setIsSuccess] = useState(false)
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null)
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({})
+  const [uploadError, setUploadError] = useState<string>("")
+  const [isImageUploading, setIsImageUploading] = useState(false)
 
   const [formData, setFormData] = useState<FormData>({
     title: "",
@@ -424,23 +428,21 @@ export default function CreateCampaignPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="imageUrl" className="text-carbon-clarity">
-                Image URL (optional)
-              </Label>
-              <Input
-                id="imageUrl"
-                type="url"
+              <ImageUpload
                 value={formData.imageUrl}
-                onChange={(e) => updateField("imageUrl", e.target.value)}
-                placeholder="https://example.com/image.jpg"
-                className="border-crowd-silver focus:border-deep-trust"
+                onChange={(url) => updateField("imageUrl", url)}
+                onError={setUploadError}
+                onUploadStateChange={setIsImageUploading}
               />
-              <p className="text-xs text-carbon-clarity">Provide a URL to an image for your campaign banner.</p>
+              {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
             </div>
+
+            {/* Warning callout */}
+            <CampaignWarning />
 
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting  || isImageUploading}
               className="w-full bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold py-6"
             >
               {isSubmitting ? "Creating Campaign..." : "Create Campaign"}
