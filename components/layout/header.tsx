@@ -35,6 +35,7 @@ export function Header() {
               width={200} // Defina a largura desejada para o logo
               height={50} // Defina a altura desejada para o logo
               priority // Opcional: para carregar a imagem com alta prioridade
+              className="h-auto w-[140px] md:w-[200px]"
             />
           </Link>
 

@@ -14,6 +14,7 @@ export function Footer() {
                 alt="CrowdMint Logo"
                 width={150}
                 height={50}
+                className="h-auto w-[100px] md:w-[150px]"
               />
             </div>
             <p className="text-sm text-muted-foreground">
