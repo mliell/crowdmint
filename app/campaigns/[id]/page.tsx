@@ -50,7 +50,6 @@ export default function CampaignDetailsPage({
   const [isApproving, setIsApproving] = useState(false)
   const [donationSuccess, setDonationSuccess] = useState(false)
 
-
   const {
     data: campaign,
     isLoading,
@@ -73,7 +72,7 @@ export default function CampaignDetailsPage({
         await switchChainAsync({ chainId: arcTestnet.id })
         toast.success("Network switched successfully!")
         // Aguarde um pouco para a rede estabilizar
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        await new Promise((resolve) => setTimeout(resolve, 1000))
       } catch (error: any) {
         console.error("Error switching network:", error)
         toast.error(`Please switch to ${arcTestnet.name} manually in your wallet`)
@@ -84,7 +83,7 @@ export default function CampaignDetailsPage({
     let attempts = 0
     let currentWalletClient = walletClient
     while (!currentWalletClient && attempts < 6) {
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await new Promise((resolve) => setTimeout(resolve, 500))
       attempts++
       currentWalletClient = walletClient
     }
@@ -125,12 +124,7 @@ export default function CampaignDetailsPage({
 
         toast.info(`Approving ${formatUsdc(Number(formatUnits(amountToApprove, 6)))} USDC...`)
         try {
-          const approveHash = await approveUsdc(
-            campaign.address,
-            amountToApprove,
-            currentWalletClient,
-            address
-          )
+          const approveHash = await approveUsdc(campaign.address, amountToApprove, currentWalletClient, address)
           toast.success(`Approval transaction sent: ${approveHash.slice(0, 10)}...`)
 
           await publicClient.waitForTransactionReceipt({ hash: approveHash })
@@ -149,12 +143,7 @@ export default function CampaignDetailsPage({
       setIsDonating(true)
 
       toast.info("Processing donation...")
-      const donateHash = await donateToCampaign(
-        campaign.address,
-        amount,
-        currentWalletClient,
-        address
-      )
+      const donateHash = await donateToCampaign(campaign.address, amount, currentWalletClient, address)
       toast.success(`Donation transaction sent: ${donateHash.slice(0, 10)}...`)
 
       await publicClient.waitForTransactionReceipt({ hash: donateHash })
@@ -210,6 +199,11 @@ export default function CampaignDetailsPage({
   const progress = getProgressPercent(campaign.raisedUsdc, campaign.goalUsdc)
   const timeRemaining = getTimeRemaining(campaign.deadline)
 
+  const heroSrc =
+    campaign.imageUrl && campaign.imageUrl.trim() !== ""
+      ? campaign.imageUrl
+      : "/no-image.jpg"
+
   return (
     <div className="container mx-auto px-4 py-8 md:py-12">
       <Button asChild variant="ghost" className="mb-6 text-carbon-clarity hover:text-deep-trust">
@@ -239,11 +233,10 @@ export default function CampaignDetailsPage({
 
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          {campaign.imageUrl && (
-            <div className="relative aspect-video rounded-xl overflow-hidden bg-crowd-silver">
-              <Image src={campaign.imageUrl || "/placeholder.svg"} alt={campaign.title} fill className="object-cover" />
-            </div>
-          )}
+          {/* Hero image (always shows, with fallback) */}
+          <div className="relative aspect-video rounded-xl overflow-hidden bg-crowd-silver">
+            <Image src={heroSrc} alt={campaign.title} fill className="object-cover" priority />
+          </div>
 
           <Card className="border-crowd-silver">
             <CardHeader>
@@ -343,6 +336,7 @@ export default function CampaignDetailsPage({
                         {isLoadingBalance ? "Loading..." : formatUsdc(usdcBalance)} USDC
                       </span>
                     </div>
+
                     <div className="space-y-2">
                       <Label htmlFor="donation-amount" className="text-carbon-clarity">
                         Donation Amount (USDC)
@@ -361,12 +355,15 @@ export default function CampaignDetailsPage({
                         onChange={(e) => setDonationAmount(e.target.value)}
                         className="border-crowd-silver focus:border-mint-pulse"
                       />
+
                       {campaign.minContributionUsdc > 0 && (
                         <p className="text-xs text-carbon-clarity">
-                          Minimum contribution: <span className="font-medium">{formatUsdc(campaign.minContributionUsdc)} USDC</span>
+                          Minimum contribution:{" "}
+                          <span className="font-medium">{formatUsdc(campaign.minContributionUsdc)} USDC</span>
                         </p>
                       )}
                     </div>
+
                     <Button
                       onClick={handleDonate}
                       disabled={
@@ -380,15 +377,13 @@ export default function CampaignDetailsPage({
                       }
                       className="w-full bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold"
                     >
-                      {isApproving
-                        ? "Approving..."
-                        : isDonating
-                          ? "Processing..."
-                          : "Donate"}
+                      {isApproving ? "Approving..." : isDonating ? "Processing..." : "Donate"}
                     </Button>
+
                     {Number(donationAmount) > usdcBalance && (
                       <p className="text-xs text-red-500 text-center">Insufficient USDC balance</p>
                     )}
+
                     {campaign.minContributionUsdc > 0 &&
                       Number(donationAmount) > 0 &&
                       Number(donationAmount) < campaign.minContributionUsdc && (

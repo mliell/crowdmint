@@ -16,17 +16,17 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
   const progress = getProgressPercent(campaign.raisedUsdc, campaign.goalUsdc)
   const timeRemaining = getTimeRemaining(campaign.deadline)
 
+  const coverSrc =
+    campaign.imageUrl && campaign.imageUrl.trim() !== ""
+      ? campaign.imageUrl
+      : "/no-image.jpg"
+
   return (
     <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300">
       {/* Image */}
       <div className="relative h-48 bg-muted">
-        {campaign.imageUrl ? (
-          <Image src={campaign.imageUrl || "/placeholder.svg"} alt={campaign.title} fill className="object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-deep-trust/10 to-mint-pulse/10">
-            <span className="text-4xl font-bold text-deep-trust/20">{campaign.title.charAt(0)}</span>
-          </div>
-        )}
+        <Image src={coverSrc} alt={campaign.title} fill className="object-cover" />
+
         {campaign.category && (
           <span className="absolute top-3 left-3 px-2 py-1 bg-background/90 backdrop-blur-sm rounded-md text-xs font-medium text-muted-foreground">
             {campaign.category}
