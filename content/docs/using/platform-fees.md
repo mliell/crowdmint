@@ -13,13 +13,13 @@ Our fee model is divided into two main categories, depending on the stage and ty
 
 ## Campaign Withdrawal Fees (For Creators)
 
-When a campaign creator withdraws the funds raised from a successful (or flexible) campaign within the 6-month grace period after the campaign ends, a small fee is applied:
+When a campaign creator withdraws the funds raised from a successful (or flexible) campaign within the 6-month grace period after the campaign ends, a small fee is applied:  
 
- **Campaign Withdrawal Fee: 0.5% of the total amount withdrawn**. Destination: This fee is directed to the platform fee collector (platformFeeCollector), contributing to the maintenance and development of CrowdMint's infrastructure. 
+ - **Campaign Withdrawal Fee: 0.5% of the total amount withdrawn**. Destination: This fee is directed to the platform fee collector (platformFeeCollector), contributing to the maintenance and development of CrowdMint's infrastructure.   
 
  > Example: If a creator withdraws 1,000 USDC, 5 USDC (0.5%) will be sent to the platform fee collector, and the creator will receive 995 USDC.
 
- ## Vault Withdrawal Fees (For Creators and Donors)
+## Vault Withdrawal Fees (For Creators and Donors)
 
  At the heart of CrowdMint, the Vault is the guardian of unclaimed funds, ensuring that, even in situations of forgetfulness, lost wallets, or unforeseen circumstances, these resources are managed with responsibility, care, and by generating revenue for the community.  
  

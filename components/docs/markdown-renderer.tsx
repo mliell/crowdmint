@@ -96,6 +96,8 @@ export function MarkdownRenderer({ htmlContent }: MarkdownRendererProps) {
           background: var(--muted);
           padding: 0.5em 1em;
           border-radius: 0.25em;
+          line-height: 1.5;
+          margin-bottom: 1em;
         }
 
         .prose table {
@@ -116,14 +118,28 @@ export function MarkdownRenderer({ htmlContent }: MarkdownRendererProps) {
           font-weight: 600;
         }
 
-        .prose ul,
-        .prose ol {
+        .prose ul { /* Estilos para listas não ordenadas */
           margin: 1em 0;
           padding-left: 2em;
+          list-style-type: disc;
+          line-height: 1.75;
+        }
+
+        .prose ol { /* Estilos para listas ordenadas */
+          margin: 1em 0;
+          padding-left: 2em;
+          list-style-type: decimal;
+          line-height: 1.75;
         }
 
         .prose li {
           margin: 0.5em 0;
+          line-height: 1.75;
+        }
+
+        .prose p { 
+          line-height: 1.75;
+          margin-bottom: 1em; 
         }
 
         .anchor-link {

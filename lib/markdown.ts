@@ -34,9 +34,13 @@ export function extractHeadings(content: string): Array<{ level: number; text: s
     const id = text
       .toLowerCase()
       .replace(/\s+/g, "-")
-      .replace(/[^\w-]/g, "")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+
 
     headings.push({ level, text, id })
+
   }
 
   return headings
