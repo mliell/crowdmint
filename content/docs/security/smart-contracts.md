@@ -50,9 +50,9 @@ For full transparency, you can inspect our deployed smart contracts directly on 
 
 * **USDC Token Contract:**  0x3600000000000000000000000000000000000000  [View on Arc Explorer](https://testnet.arcscan.app/token/0x3600000000000000000000000000000000000000)  
 
-* **CrowdMint CampaignFactory Contract:**  0x79c0A67d298930bFe1d63123AC4FF9d0C24aAc2A  [View on Arc Explorer](https://testnet.arcscan.app/address/0x79c0A67d298930bFe1d63123AC4FF9d0C24aAc2A)   
+* **CrowdMint CampaignFactory Contract:**  0xfBBac4459f24EfA9Dc7089777Dc5B3Af25b3bce7  [View on Arc Explorer](https://testnet.arcscan.app/address/0xfBBac4459f24EfA9Dc7089777Dc5B3Af25b3bce7)   
 
-* **CrowdMintVault Contract:**  0xf666085998533c85F06d952BD9879cc12b7ce397   [View on Arc Explorer](https://testnet.arcscan.app/address/0xf666085998533c85F06d952BD9879cc12b7ce397)   
+* **CrowdMintVault Contract:**  0x6CAab34D5CaD1E7e52d8d39D263d8f8AAE645bDa   [View on Arc Explorer](https://testnet.arcscan.app/address/0x6CAab34D5CaD1E7e52d8d39D263d8f8AAE645bDa)   
 
 * **Example Campaign Contract:**    0x9762eD8697c8a15D2Bc872d5aA796298833c0f84   [View on Arc Explorer](https://testnet.arcscan.app/address/0x9762eD8697c8a15D2Bc872d5aA796298833c0f84)
 
