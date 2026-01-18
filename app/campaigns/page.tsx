@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { CampaignCard } from "@/components/campaign/campaign-card"
 import { fetchAllCampaigns } from "@/lib/campaigns"
-import { useWeb3Clients } from "@/hooks/use-web3-client"
 import type { Campaign } from "@/types/campaign"
 import { Search } from "lucide-react"
 import useSWR from "swr"
@@ -17,28 +16,30 @@ export default function CampaignsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<FilterType>("all")
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all")
-  const { publicClient } = useWeb3Clients()
 
   const { data: campaigns = [], isLoading } = useSWR<Campaign[]>(
-    publicClient ? "campaigns" : null,
-    () => fetchAllCampaigns(publicClient || undefined),
+    "campaigns",
+    fetchAllCampaigns,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      refreshInterval: 60000,
+      dedupingInterval: 30000,
+    }
   )
 
   const filteredCampaigns = useMemo(() => {
     return campaigns.filter((campaign) => {
-      // Search filter
       const matchesSearch =
         searchQuery === "" ||
         campaign.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         campaign.shortDescription.toLowerCase().includes(searchQuery.toLowerCase())
 
-      // Type filter
       const matchesType =
         typeFilter === "all" ||
         (typeFilter === "goal-based" && campaign.goalBased) ||
         (typeFilter === "flexible" && !campaign.goalBased)
 
-      // Status filter
       const matchesStatus =
         statusFilter === "all" ||
         (statusFilter === "active" && campaign.isActive && !campaign.isExpired) ||
@@ -50,15 +51,12 @@ export default function CampaignsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 md:py-12">
-      {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-deep-trust mb-2">All Campaigns</h1>
         <p className="text-carbon-clarity">Discover and support innovative projects from creators around the world.</p>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col lg:flex-row gap-4 mb-8">
-        {/* Search */}
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-carbon-clarity" />
           <Input
@@ -70,7 +68,6 @@ export default function CampaignsPage() {
           />
         </div>
 
-        {/* Type filter */}
         <div className="flex gap-2">
           {(["all", "goal-based", "flexible"] as FilterType[]).map((type) => (
             <Button
@@ -89,7 +86,6 @@ export default function CampaignsPage() {
           ))}
         </div>
 
-        {/* Status filter */}
         <div className="flex gap-2">
           {(["all", "active", "ended"] as FilterStatus[]).map((status) => (
             <Button
@@ -109,7 +105,6 @@ export default function CampaignsPage() {
         </div>
       </div>
 
-      {/* Campaign Grid */}
       {isLoading ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
@@ -139,7 +134,6 @@ export default function CampaignsPage() {
         </div>
       )}
 
-      {/* Results count */}
       {!isLoading && filteredCampaigns.length > 0 && (
         <p className="text-sm text-carbon-clarity mt-8 text-center">
           Showing {filteredCampaigns.length} of {campaigns.length} campaigns
