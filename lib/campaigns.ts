@@ -23,6 +23,22 @@ export function computeCampaignStatus(campaign: {
   return campaign.hasReachedGoal ? "expired-goal-met" : "expired-goal-not-met"
 }
 
+// Helper to get the base URL for API calls
+function getBaseUrl(): string {
+  // No navegador
+  if (typeof window !== 'undefined') {
+    return ''
+  }
+
+  // No servidor durante build ou produção
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`
+  }
+
+  // Desenvolvimento local
+  return `http://localhost:${process.env.PORT || 3000}`
+}
+
 // Helper to fetch metadata from URI (IPFS, HTTP, Data URI, etc.)
 async function fetchMetadata(uri: string): Promise<{
   title: string
@@ -131,9 +147,9 @@ async function convertToCampaign(
   const now = Math.floor(Date.now() / 1000)
   const deadline = Number(details.deadline)
   const isExpired = deadline < now
-  const goalUsdc = Number(formatUnits(details.goal, 6)) // USDC has 6 decimals
+  const goalUsdc = Number(formatUnits(details.goal, 6))
   const raisedUsdc = Number(formatUnits(details.amountRaised, 6))
-  const minContributionUsdc = Number(formatUnits(details.minContribution, 6)) // USDC has 6 decimals
+  const minContributionUsdc = Number(formatUnits(details.minContribution, 6))
   const hasReachedGoal = raisedUsdc >= goalUsdc
 
   // Fetch metadata
@@ -176,34 +192,36 @@ async function convertToCampaign(
   return campaign
 }
 
-// Data access functions with smart contract integration
-export async function fetchAllCampaigns(publicClient?: PublicClient): Promise<Campaign[]> {
-  if (!publicClient) {
-    // Return empty array if no public client (client-side only)
-    return []
-  }
-
+// ===== NOVA FUNÇÃO: Buscar campanhas da API Route =====
+export async function fetchAllCampaigns(): Promise<Campaign[]> {
   try {
-    const campaignAddresses = await getAllCampaigns(publicClient)
-    const campaigns = await Promise.all(
-      campaignAddresses.map(async (address) => {
-        try {
-          const details = await readCampaignDetails(address, publicClient)
-          return await convertToCampaign(address, details, publicClient)
-        } catch (error) {
-          console.error(`Error fetching campaign ${address}:`, error)
-          return null
-        }
-      }),
-    )
+    const baseUrl = getBaseUrl()
+    const url = `${baseUrl}/api/campaigns`
 
-    return campaigns.filter((c): c is Campaign => c !== null)
+    const response = await fetch(url, {
+      next: { revalidate: 60 },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch campaigns from API: ${response.status} ${response.statusText}`)
+    }
+
+    const data = await response.json()
+
+    // Converter deadline de string para Date
+    const campaigns = (data.campaigns || []).map((campaign: any) => ({
+      ...campaign,
+      deadline: new Date(campaign.deadline), // Converte string ISO para Date
+    }))
+
+    return campaigns
   } catch (error) {
-    console.error("Error fetching all campaigns:", error)
+    console.error('Error fetching campaigns from API:', error)
     return []
   }
 }
 
+// ===== Manter funções existentes para páginas individuais =====
 export async function fetchCampaignByAddress(
   address: Address,
   publicClient?: PublicClient,
@@ -259,8 +277,7 @@ export async function fetchDonationsByUser(
   }
 
   try {
-    // Get all campaigns and check for donations
-    const allCampaigns = await fetchAllCampaigns(publicClient)
+    const allCampaigns = await fetchAllCampaigns()
     const donations: Donation[] = []
 
     for (const campaign of allCampaigns) {
@@ -275,7 +292,7 @@ export async function fetchDonationsByUser(
             campaignAddress: campaign.address,
             campaignTitle: campaign.title,
             amountUsdc,
-            donatedAt: new Date(), // TODO: Get actual donation timestamp from events
+            donatedAt: new Date(),
             campaignStatus: campaign.isExpired
               ? campaign.hasReachedGoal || !campaign.goalBased
                 ? "ended"
@@ -297,14 +314,9 @@ export async function fetchDonationsByUser(
   }
 }
 
-export async function fetchFeaturedCampaigns(publicClient?: PublicClient): Promise<Campaign[]> {
-  if (!publicClient) {
-    return []
-  }
-
+export async function fetchFeaturedCampaigns(): Promise<Campaign[]> {
   try {
-    const allCampaigns = await fetchAllCampaigns(publicClient)
-    // Sort by amount raised and take top 3
+    const allCampaigns = await fetchAllCampaigns()
     return allCampaigns.sort((a, b) => b.raisedUsdc - a.raisedUsdc).slice(0, 3)
   } catch (error) {
     console.error("Error fetching featured campaigns:", error)
@@ -324,9 +336,21 @@ export function shortenAddress(address: string, chars = 4): string {
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`
 }
 
-export function getTimeRemaining(deadline: Date): string {
+// ✅ ATUALIZADO: Aceita Date, string ou number
+export function getTimeRemaining(deadline: Date | string | number): string {
   const now = new Date()
-  const diff = deadline.getTime() - now.getTime()
+
+  // Converter para Date se for string ou number
+  let deadlineDate: Date
+  if (deadline instanceof Date) {
+    deadlineDate = deadline
+  } else if (typeof deadline === 'string') {
+    deadlineDate = new Date(deadline)
+  } else {
+    deadlineDate = new Date(deadline * 1000) // Assume timestamp em segundos
+  }
+
+  const diff = deadlineDate.getTime() - now.getTime()
 
   if (diff <= 0) return "Ended"
 
