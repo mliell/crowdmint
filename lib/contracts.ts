@@ -164,7 +164,7 @@ export async function getDonorContribution(
 export async function getBackersCount(
   campaignAddress: Address,
   publicClient: PublicClient,
-): Promise<number> {
+): Promise<number | undefined> {
   try {
     const donors = await getDonorsList(campaignAddress, publicClient)
     return donors.length
@@ -173,7 +173,7 @@ export async function getBackersCount(
       `Failed to get backers count for campaign ${campaignAddress}:`,
       error?.message || error,
     )
-    return 0
+    return undefined
   }
 }
 
@@ -201,21 +201,31 @@ export async function readAllCampaignDetailsBatched(
 }
 
 /**
- * Fetch backers count for multiple campaigns in parallel.
+ * Fetch backers count for multiple campaigns in small sequential chunks to avoid RPC rate limiting (429).
+ * Returns undefined for campaigns where getDonors() is unavailable (e.g. older contract versions).
  */
 export async function readAllBackersCountBatched(
   campaignAddresses: Address[],
   publicClient: PublicClient,
-): Promise<number[]> {
+): Promise<(number | undefined)[]> {
   if (campaignAddresses.length === 0) return []
 
-  const results = await Promise.allSettled(
-    campaignAddresses.map((addr) => getBackersCount(addr, publicClient)),
-  )
+  const CHUNK_SIZE = 3
+  const CHUNK_DELAY_MS = 300
+  const results: (number | undefined)[] = []
 
-  return results.map((result) =>
-    result.status === "fulfilled" ? result.value : 0,
-  )
+  for (let i = 0; i < campaignAddresses.length; i += CHUNK_SIZE) {
+    const chunk = campaignAddresses.slice(i, i + CHUNK_SIZE)
+    const chunkResults = await Promise.allSettled(
+      chunk.map((addr) => getBackersCount(addr, publicClient)),
+    )
+    results.push(...chunkResults.map((r) => (r.status === "fulfilled" ? r.value : undefined)))
+    if (i + CHUNK_SIZE < campaignAddresses.length) {
+      await new Promise((resolve) => setTimeout(resolve, CHUNK_DELAY_MS))
+    }
+  }
+
+  return results
 }
 
 /**
