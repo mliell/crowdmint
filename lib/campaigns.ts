@@ -123,10 +123,11 @@ async function fetchMetadata(uri: string): Promise<{
 
 // Convert on-chain details to Campaign object.
 // backersCount is pre-fetched via multicall and passed in directly.
+// undefined means getDonors() was unavailable (e.g. older contract version).
 async function convertToCampaign(
   address: Address,
   details: CampaignDetailsOnChain,
-  backersCount: number,
+  backersCount: number | undefined,
 ): Promise<Campaign> {
   const now = Math.floor(Date.now() / 1000)
   const deadline = Number(details.deadline)

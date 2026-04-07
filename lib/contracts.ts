@@ -164,7 +164,7 @@ export async function getDonorContribution(
 export async function getBackersCount(
   campaignAddress: Address,
   publicClient: PublicClient,
-): Promise<number> {
+): Promise<number | undefined> {
   try {
     const donors = await getDonorsList(campaignAddress, publicClient)
     return donors.length
@@ -173,7 +173,7 @@ export async function getBackersCount(
       `Failed to get backers count for campaign ${campaignAddress}:`,
       error?.message || error,
     )
-    return 0
+    return undefined
   }
 }
 
@@ -202,11 +202,12 @@ export async function readAllCampaignDetailsBatched(
 
 /**
  * Fetch backers count for multiple campaigns in parallel.
+ * Returns undefined for campaigns where getDonors() is unavailable (e.g. older contract versions).
  */
 export async function readAllBackersCountBatched(
   campaignAddresses: Address[],
   publicClient: PublicClient,
-): Promise<number[]> {
+): Promise<(number | undefined)[]> {
   if (campaignAddresses.length === 0) return []
 
   const results = await Promise.allSettled(
@@ -214,7 +215,7 @@ export async function readAllBackersCountBatched(
   )
 
   return results.map((result) =>
-    result.status === "fulfilled" ? result.value : 0,
+    result.status === "fulfilled" ? result.value : undefined,
   )
 }
 
