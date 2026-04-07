@@ -70,7 +70,6 @@
     "sharp": "^0.34.5",
     "shiki": "^3.20.0",
     "sonner": "^2.0.7",
-    "swr": "latest",
     "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
     "unified": "^11.0.5",

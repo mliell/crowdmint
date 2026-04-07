@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -17,9 +17,11 @@ import { arcTestnet } from "@/config/web3"
 import { CAMPAIGN_CATEGORIES } from "@/types/campaign"
 import { formatUsdc } from "@/lib/campaigns"
 import { createCampaign } from "@/lib/contracts"
+import { campaignFactoryAbi } from "@/contracts/abis"
 import { uploadMetadataToIPFS } from "@/lib/metadata"
-import { parseUnits } from "viem"
-import { Wallet, ArrowLeft, CheckCircle } from "lucide-react"
+import { parseUnits, decodeEventLog } from "viem"
+import { getTxExplorerUrl } from "@/config/web3"
+import { Wallet, ArrowLeft, CheckCircle, ExternalLink, Share2, Copy, Sparkles, PartyPopper, Rocket } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { ImageUpload } from "@/components/campaign/image-upload"
@@ -40,7 +42,7 @@ interface FormData {
 export default function CreateCampaignPage() {
   const router = useRouter()
   const { address, isConnected, chain } = useAccount()
-  const { walletClient } = useWeb3Clients()
+  const { publicClient, walletClient } = useWeb3Clients()
   const { connect } = useConnect()
   const { switchChainAsync } = useSwitchChain()
 
@@ -51,6 +53,8 @@ export default function CreateCampaignPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null)
+  const [campaignAddress, setCampaignAddress] = useState<string | null>(null)
+  const [createdTitle, setCreatedTitle] = useState("")
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({})
   const [uploadError, setUploadError] = useState<string>("")
   const [isImageUploading, setIsImageUploading] = useState(false)
@@ -172,15 +176,40 @@ export default function CreateCampaignPage() {
         formData.type === "goal-based",
         metadataURI,
         minContribution,
+        publicClient,
         currentWalletClient,
         address,
       )
 
       setTxHash(hash)
+      setCreatedTitle(formData.title)
+      toast.info("Waiting for confirmation...")
+
+      // Wait for receipt and extract campaign address from CampaignCreated event
+      try {
+        const receipt = await publicClient.waitForTransactionReceipt({ hash })
+        for (const log of receipt.logs) {
+          try {
+            const decoded = decodeEventLog({
+              abi: campaignFactoryAbi,
+              data: log.data,
+              topics: log.topics,
+            })
+            if (decoded.eventName === "CampaignCreated" && decoded.args) {
+              const args = decoded.args as { campaignAddress: string }
+              setCampaignAddress(args.campaignAddress)
+              break
+            }
+          } catch {
+            // Not a matching event, skip
+          }
+        }
+      } catch (error) {
+        console.error("Error waiting for receipt:", error)
+      }
+
       setIsSuccess(true)
       toast.success("Campaign created successfully!")
-
-      await new Promise((resolve) => setTimeout(resolve, 3000))
     } catch (error: any) {
       console.error("Error creating campaign:", error)
       toast.error(error?.message || "Failed to create campaign. Please try again.")
@@ -206,31 +235,169 @@ export default function CreateCampaignPage() {
     )
   }
 
+  const campaignUrl = campaignAddress
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/campaigns/${campaignAddress}`
+    : null
+
+  const handleShare = useCallback(async () => {
+    if (!campaignUrl) return
+    const shareData = {
+      title: `${createdTitle} — CrowdMint`,
+      text: `Check out "${createdTitle}" on CrowdMint!`,
+      url: campaignUrl,
+    }
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share(shareData)
+      } catch {
+        // User cancelled or not supported
+      }
+    } else {
+      await navigator.clipboard.writeText(campaignUrl)
+      toast.success("Campaign link copied to clipboard!")
+    }
+  }, [campaignUrl, createdTitle])
+
+  const handleCopyLink = useCallback(async () => {
+    if (!campaignUrl) return
+    await navigator.clipboard.writeText(campaignUrl)
+    toast.success("Link copied!")
+  }, [campaignUrl])
+
   if (isSuccess) {
     return (
-      <div className="container mx-auto px-4 py-16">
-        <div className="max-w-md mx-auto text-center">
-          <div className="w-16 h-16 rounded-full bg-mint-pulse/10 flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="h-8 w-8 text-mint-pulse" />
+      <div className="container mx-auto px-4 py-16 relative overflow-hidden">
+        {/* Confetti animation */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          {[...Array(40)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute animate-confetti"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 3}s`,
+                animationDuration: `${2.5 + Math.random() * 2}s`,
+              }}
+            >
+              <div
+                className="w-2.5 h-2.5 rounded-sm"
+                style={{
+                  backgroundColor: [
+                    "#10B981", // mint-pulse
+                    "#1E3A5F", // deep-trust
+                    "#F59E0B", // vault-gold
+                    "#8B5CF6", // purple
+                    "#EC4899", // pink
+                    "#06B6D4", // cyan
+                  ][i % 6],
+                  transform: `rotate(${Math.random() * 360}deg)`,
+                }}
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="max-w-lg mx-auto text-center relative z-10">
+          {/* Celebration icon */}
+          <div className="relative inline-block mb-8">
+            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-mint-pulse/20 to-deep-trust/20 flex items-center justify-center mx-auto animate-bounce-slow">
+              <Rocket className="h-12 w-12 text-mint-pulse" />
+            </div>
+            <div className="absolute -top-2 -right-2">
+              <Sparkles className="h-8 w-8 text-vault-gold animate-pulse" />
+            </div>
+            <div className="absolute -bottom-1 -left-3">
+              <PartyPopper className="h-7 w-7 text-deep-trust animate-pulse" style={{ animationDelay: "0.5s" }} />
+            </div>
           </div>
-          <h1 className="text-2xl font-bold text-deep-trust mb-4">Campaign Created!</h1>
-          <p className="text-carbon-clarity mb-8">
-            Your campaign has been submitted to the blockchain. It will be visible once the transaction is confirmed.
+
+          <h1 className="text-3xl md:text-4xl font-bold mb-3">
+            <span className="text-deep-trust">Campaign </span>
+            <span className="text-mint-pulse">Launched!</span>
+          </h1>
+
+          <p className="text-lg text-carbon-clarity mb-2">
+            <span className="font-semibold text-deep-trust">&ldquo;{createdTitle}&rdquo;</span> is now live on-chain.
           </p>
+          <p className="text-sm text-carbon-clarity/70 mb-8">
+            Your campaign has been confirmed on the blockchain and is ready to receive donations.
+          </p>
+
+          {/* TX info */}
           {txHash && (
-            <p className="text-sm text-carbon-clarity mb-4 font-mono break-all">
-              TX: {txHash}
-            </p>
+            <Card className="border-crowd-silver mb-8">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-carbon-clarity">Transaction</span>
+                  <a
+                    href={getTxExplorerUrl(txHash)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs font-mono text-deep-trust hover:underline"
+                  >
+                    {txHash.slice(0, 10)}...{txHash.slice(-8)}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+                {campaignAddress && (
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-crowd-silver">
+                    <span className="text-xs text-carbon-clarity">Campaign Contract</span>
+                    <span className="text-xs font-mono text-deep-trust">
+                      {campaignAddress.slice(0, 10)}...{campaignAddress.slice(-8)}
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button asChild className="bg-deep-trust hover:bg-deep-trust/90">
-              <Link href="/my/campaigns">View My Campaigns</Link>
+
+          {/* Primary actions */}
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            {campaignAddress ? (
+              <Button asChild className="flex-1 bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold py-6">
+                <Link href={`/campaigns/${campaignAddress}`}>
+                  <Rocket className="mr-2 h-4 w-4" />
+                  View Campaign
+                </Link>
+              </Button>
+            ) : (
+              <Button asChild className="flex-1 bg-mint-pulse hover:bg-mint-pulse/90 text-white font-semibold py-6">
+                <Link href="/my/campaigns">
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  View My Campaigns
+                </Link>
+              </Button>
+            )}
+
+            <Button
+              onClick={handleShare}
+              disabled={!campaignUrl}
+              className="flex-1 bg-deep-trust hover:bg-deep-trust/90 text-white font-semibold py-6"
+            >
+              <Share2 className="mr-2 h-4 w-4" />
+              Share Campaign
             </Button>
+          </div>
+
+          {/* Secondary actions */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            {campaignUrl && (
+              <Button
+                variant="outline"
+                onClick={handleCopyLink}
+                className="flex-1 border-crowd-silver text-carbon-clarity hover:border-deep-trust hover:text-deep-trust bg-transparent"
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                Copy Link
+              </Button>
+            )}
             <Button
               variant="outline"
-              className="border-deep-trust text-deep-trust bg-transparent"
+              className="flex-1 border-crowd-silver text-carbon-clarity hover:border-deep-trust hover:text-deep-trust bg-transparent"
               onClick={() => {
                 setIsSuccess(false)
+                setCampaignAddress(null)
+                setTxHash(null)
                 setFormData({
                   title: "",
                   shortDescription: "",
@@ -244,10 +411,38 @@ export default function CreateCampaignPage() {
                 })
               }}
             >
-              Create Another
+              Create Another Campaign
             </Button>
           </div>
         </div>
+
+        {/* CSS animations */}
+        <style jsx>{`
+          @keyframes confetti-fall {
+            0% {
+              transform: translateY(-100vh) rotate(0deg);
+              opacity: 1;
+            }
+            100% {
+              transform: translateY(100vh) rotate(720deg);
+              opacity: 0;
+            }
+          }
+          @keyframes bounce-slow {
+            0%, 100% {
+              transform: translateY(0);
+            }
+            50% {
+              transform: translateY(-10px);
+            }
+          }
+          :global(.animate-confetti) {
+            animation: confetti-fall linear forwards;
+          }
+          :global(.animate-bounce-slow) {
+            animation: bounce-slow 2s ease-in-out infinite;
+          }
+        `}</style>
       </div>
     )
   }

@@ -8,11 +8,11 @@ import { useAccount, useConnect, useSwitchChain } from "wagmi"
 import { injected } from "wagmi/connectors"
 import { useWeb3Clients } from "@/hooks/use-web3-client"
 import { arcTestnet } from "@/config/web3"
-import { fetchCampaignsByCreator, shortenAddress } from "@/lib/campaigns"
+import { shortenAddress, formatUsdc } from "@/lib/campaigns"
 import { withdrawFromCampaign } from "@/lib/contracts"
-import type { Campaign } from "@/types/campaign"
-import { Wallet, Plus, ArrowRight } from "lucide-react"
-import useSWR from "swr"
+import { useMyCampaigns, useInvalidateCampaigns } from "@/hooks/use-campaigns"
+import { DonorsModal } from "@/components/campaign/donors-modal"
+import { Wallet, Plus, ArrowRight, Users } from "lucide-react"
 import { toast } from "sonner"
 
 export default function MyCampaignsPage() {
@@ -25,10 +25,8 @@ export default function MyCampaignsPage() {
     connect({ connector: injected() })
   }
 
-  const { data: campaigns = [], isLoading, mutate } = useSWR<Campaign[]>(
-    isConnected && address && publicClient ? `my-campaigns-${address}` : null,
-    () => fetchCampaignsByCreator(address!, publicClient || undefined),
-  )
+  const { data: campaigns = [], isLoading } = useMyCampaigns()
+  const { invalidateAll } = useInvalidateCampaigns()
 
   const handleWithdraw = async (campaignAddress: string) => {
     if (!isConnected || !address) {
@@ -72,6 +70,7 @@ export default function MyCampaignsPage() {
       toast.info("Processing withdrawal...")
       const hash = await withdrawFromCampaign(
         campaignAddress as `0x${string}`,
+        publicClient,
         currentWalletClient,
         address
       )
@@ -80,7 +79,7 @@ export default function MyCampaignsPage() {
       await publicClient.waitForTransactionReceipt({ hash })
       toast.success("Withdrawal successful!")
 
-      mutate()
+      invalidateAll()
     } catch (error: any) {
       console.error("Error withdrawing:", error)
       toast.error(error?.message || "Failed to withdraw. Please try again.")
@@ -148,21 +147,46 @@ export default function MyCampaignsPage() {
         </Card>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {campaigns.map((campaign) => (
-            <div key={campaign.address} className="relative">
-              <CampaignCard campaign={campaign} />
-              {campaign.isExpired && !campaign.withdrawn && (campaign.hasReachedGoal || !campaign.goalBased) && (
-                <div className="absolute bottom-4 left-4 right-4">
-                  <Button
-                    className="w-full bg-vault-gold hover:bg-vault-gold/90 text-white font-semibold"
-                    onClick={() => handleWithdraw(campaign.address)}
-                  >
-                    Withdraw Funds
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
+          {campaigns.map((campaign) => {
+            const canWithdraw = campaign.isExpired && !campaign.withdrawn && (campaign.hasReachedGoal || !campaign.goalBased)
+            const hasDonors = (campaign.backersCount ?? 0) > 0
+            return (
+              <CampaignCard
+                key={campaign.address}
+                campaign={campaign}
+                extraAction={(hasDonors || canWithdraw) ? (
+                  <div className="space-y-2">
+                    {hasDonors && (
+                      <DonorsModal campaignAddress={campaign.address} campaignTitle={campaign.title}>
+                        <Button
+                          variant="outline"
+                          className="w-full border-crowd-silver text-carbon-clarity hover:border-deep-trust hover:text-deep-trust bg-transparent"
+                          size="sm"
+                        >
+                          <Users className="mr-1 h-3.5 w-3.5" />
+                          Donors
+                        </Button>
+                      </DonorsModal>
+                    )}
+                    {canWithdraw && (
+                      <div className="space-y-1">
+                        <Button
+                          className="w-full bg-vault-gold hover:bg-vault-gold/90 text-white font-semibold"
+                          onClick={() => handleWithdraw(campaign.address)}
+                          size="sm"
+                        >
+                          Withdraw
+                        </Button>
+                        <p className="text-[10px] text-carbon-clarity text-center">
+                          Net: {formatUsdc(campaign.raisedUsdc * 0.995)} USDC (0.5% fee)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : undefined}
+              />
+            )
+          })}
         </div>
       )}
     </div>

@@ -10,9 +10,11 @@ import { Clock, Users } from "lucide-react"
 
 interface CampaignCardProps {
   campaign: Campaign
+  /** Optional extra actions rendered alongside "View Campaign" in the footer */
+  extraAction?: React.ReactNode
 }
 
-export function CampaignCard({ campaign }: CampaignCardProps) {
+export function CampaignCard({ campaign, extraAction }: CampaignCardProps) {
   const progress = getProgressPercent(campaign.raisedUsdc, campaign.goalUsdc)
   const timeRemaining = getTimeRemaining(campaign.deadline)
 
@@ -72,9 +74,20 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
       </CardContent>
 
       <CardFooter className="p-4 pt-0">
-        <Button asChild className="w-full bg-deep-trust hover:bg-deep-trust/90 text-white">
-          <Link href={`/campaigns/${campaign.address}`}>View Campaign</Link>
-        </Button>
+        {extraAction ? (
+          <div className="w-full space-y-2">
+            <div className="flex gap-2">
+              <Button asChild variant="outline" className="flex-1 border-deep-trust text-deep-trust hover:bg-deep-trust/10 bg-transparent">
+                <Link href={`/campaigns/${campaign.address}`}>View</Link>
+              </Button>
+              <div className="flex-1">{extraAction}</div>
+            </div>
+          </div>
+        ) : (
+          <Button asChild className="w-full bg-deep-trust hover:bg-deep-trust/90 text-white">
+            <Link href={`/campaigns/${campaign.address}`}>View Campaign</Link>
+          </Button>
+        )}
       </CardFooter>
     </Card>
   )

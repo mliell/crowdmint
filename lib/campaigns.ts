@@ -3,11 +3,11 @@ import type { PublicClient } from "viem"
 import type { Campaign, Donation, CampaignStatus, CampaignDetailsOnChain } from "@/types/campaign"
 import {
   getAllCampaigns,
-  getCampaignsByCreator,
-  readCampaignDetails,
-  getBackersCount,
+  readAllCampaignDetailsBatched,
+  readAllBackersCountBatched,
+  readUserDonationsBatched,
 } from "@/lib/contracts"
-import { parseUnits, formatUnits } from "viem"
+import { formatUnits } from "viem"
 
 // Helper to compute campaign status
 export function computeCampaignStatus(campaign: {
@@ -35,16 +35,16 @@ async function fetchMetadata(uri: string): Promise<{
     // Handle Data URIs (base64 encoded JSON)
     if (uri.startsWith("data:application/json")) {
       try {
-        // Extract base64 data from data URI
         const base64Data = uri.split(",")[1]
         if (base64Data) {
-          // Decode base64 to string (browser compatible)
+          // Decode base64 to UTF-8 string
+          // atob() alone produces Latin-1, corrupting multi-byte UTF-8 chars (ã, ç, é, etc.)
           let jsonString: string
           if (typeof window !== "undefined" && typeof atob !== "undefined") {
-            // Browser environment - use atob
-            jsonString = atob(base64Data)
+            const binaryString = atob(base64Data)
+            const bytes = Uint8Array.from(binaryString, (c) => c.charCodeAt(0))
+            jsonString = new TextDecoder("utf-8").decode(bytes)
           } else if (typeof Buffer !== "undefined") {
-            // Node.js environment - use Buffer
             jsonString = Buffer.from(base64Data, "base64").toString("utf-8")
           } else {
             throw new Error("No base64 decoder available")
@@ -115,39 +115,30 @@ async function fetchMetadata(uri: string): Promise<{
     console.error("URI was:", uri)
   }
 
-  // Return default metadata if fetch fails
   return {
     title: "Untitled Campaign",
     shortDescription: "No description available",
   }
 }
 
-// Convert on-chain details to Campaign object
+// Convert on-chain details to Campaign object.
+// backersCount is pre-fetched via multicall and passed in directly.
 async function convertToCampaign(
   address: Address,
   details: CampaignDetailsOnChain,
-  publicClient: PublicClient,
+  backersCount: number,
 ): Promise<Campaign> {
   const now = Math.floor(Date.now() / 1000)
   const deadline = Number(details.deadline)
   const isExpired = deadline < now
-  const goalUsdc = Number(formatUnits(details.goal, 6)) // USDC has 6 decimals
+  const goalUsdc = Number(formatUnits(details.goal, 6))
   const raisedUsdc = Number(formatUnits(details.amountRaised, 6))
-  const minContributionUsdc = Number(formatUnits(details.minContribution, 6)) // USDC has 6 decimals
+  const minContributionUsdc = Number(formatUnits(details.minContribution, 6))
   const hasReachedGoal = raisedUsdc >= goalUsdc
 
-  // Fetch metadata
   const metadata = await fetchMetadata(details.metadataURI)
 
-  // Get backers count
-  let backersCount = 0
-  try {
-    backersCount = await getBackersCount(address, publicClient)
-  } catch (error) {
-    console.error("Error fetching backers count:", error)
-  }
-
-  const campaign: Campaign = {
+  return {
     address,
     creator: details.creator,
     title: metadata.title,
@@ -172,26 +163,30 @@ async function convertToCampaign(
     }),
     backersCount,
   }
-
-  return campaign
 }
 
 // Data access functions with smart contract integration
+// Uses parallel batching: 1 call for addresses + parallel details + parallel backers (was 2N+1)
 export async function fetchAllCampaigns(publicClient?: PublicClient): Promise<Campaign[]> {
-  if (!publicClient) {
-    // Return empty array if no public client (client-side only)
-    return []
-  }
+  if (!publicClient) return []
 
   try {
     const campaignAddresses = await getAllCampaigns(publicClient)
+    if (campaignAddresses.length === 0) return []
+
+    const [allDetails, allBackers] = await Promise.all([
+      readAllCampaignDetailsBatched(campaignAddresses, publicClient),
+      readAllBackersCountBatched(campaignAddresses, publicClient),
+    ])
+
     const campaigns = await Promise.all(
-      campaignAddresses.map(async (address) => {
+      campaignAddresses.map(async (address, i) => {
+        const details = allDetails[i]
+        if (!details) return null
         try {
-          const details = await readCampaignDetails(address, publicClient)
-          return await convertToCampaign(address, details, publicClient)
+          return await convertToCampaign(address, details, allBackers[i])
         } catch (error) {
-          console.error(`Error fetching campaign ${address}:`, error)
+          console.error(`Error converting campaign ${address}:`, error)
           return null
         }
       }),
@@ -204,40 +199,51 @@ export async function fetchAllCampaigns(publicClient?: PublicClient): Promise<Ca
   }
 }
 
+// Single campaign fetch — batches details + backers in parallel (was 2 sequential calls)
 export async function fetchCampaignByAddress(
   address: Address,
   publicClient?: PublicClient,
 ): Promise<Campaign | null> {
-  if (!publicClient) {
-    return null
-  }
+  if (!publicClient) return null
 
   try {
-    const details = await readCampaignDetails(address, publicClient)
-    return await convertToCampaign(address, details, publicClient)
+    const [[details], [backers]] = await Promise.all([
+      readAllCampaignDetailsBatched([address], publicClient),
+      readAllBackersCountBatched([address], publicClient),
+    ])
+    if (!details) return null
+    return await convertToCampaign(address, details, backers)
   } catch (error) {
     console.error(`Error fetching campaign ${address}:`, error)
     return null
   }
 }
 
+// Fetch campaigns by creator — 1 call for addresses + parallel details, filter client-side (was N+1 + N+1)
 export async function fetchCampaignsByCreator(
   creator: Address,
   publicClient?: PublicClient,
 ): Promise<Campaign[]> {
-  if (!publicClient) {
-    return []
-  }
+  if (!publicClient) return []
 
   try {
-    const campaignAddresses = await getCampaignsByCreator(creator, publicClient)
+    const allAddresses = await getAllCampaigns(publicClient)
+    if (allAddresses.length === 0) return []
+
+    const [allDetails, allBackers] = await Promise.all([
+      readAllCampaignDetailsBatched(allAddresses, publicClient),
+      readAllBackersCountBatched(allAddresses, publicClient),
+    ])
+
     const campaigns = await Promise.all(
-      campaignAddresses.map(async (address) => {
+      allAddresses.map(async (address, i) => {
+        const details = allDetails[i]
+        if (!details) return null
+        if (details.creator.toLowerCase() !== creator.toLowerCase()) return null
         try {
-          const details = await readCampaignDetails(address, publicClient)
-          return await convertToCampaign(address, details, publicClient)
+          return await convertToCampaign(address, details, allBackers[i])
         } catch (error) {
-          console.error(`Error fetching campaign ${address}:`, error)
+          console.error(`Error converting campaign ${address}:`, error)
           return null
         }
       }),
@@ -250,44 +256,53 @@ export async function fetchCampaignsByCreator(
   }
 }
 
+// Fetch user donations — parallel: details + backers + donation amounts (was 3N+1)
 export async function fetchDonationsByUser(
   user: Address,
   publicClient?: PublicClient,
 ): Promise<Donation[]> {
-  if (!publicClient) {
-    return []
-  }
+  if (!publicClient) return []
 
   try {
-    // Get all campaigns and check for donations
-    const allCampaigns = await fetchAllCampaigns(publicClient)
+    const allAddresses = await getAllCampaigns(publicClient)
+    if (allAddresses.length === 0) return []
+
+    const [allDetails, allBackers, allDonations] = await Promise.all([
+      readAllCampaignDetailsBatched(allAddresses, publicClient),
+      readAllBackersCountBatched(allAddresses, publicClient),
+      readUserDonationsBatched(user, allAddresses, publicClient),
+    ])
+
     const donations: Donation[] = []
 
-    for (const campaign of allCampaigns) {
-      try {
-        const { getCampaignContract } = await import("@/lib/contracts")
-        const campaignContract = getCampaignContract(campaign.address, publicClient)
-        const donationAmount = await campaignContract.read.donations([user])
+    for (let i = 0; i < allAddresses.length; i++) {
+      const donationAmount = allDonations[i]
+      if (donationAmount <= 0n) continue
 
-        if (donationAmount > 0n) {
-          const amountUsdc = Number(formatUnits(donationAmount, 6))
-          donations.push({
-            campaignAddress: campaign.address,
-            campaignTitle: campaign.title,
-            amountUsdc,
-            donatedAt: new Date(), // TODO: Get actual donation timestamp from events
-            campaignStatus: campaign.isExpired
-              ? campaign.hasReachedGoal || !campaign.goalBased
-                ? "ended"
-                : "refunding"
-              : campaign.withdrawn
-                ? "withdrawn"
-                : "active",
-          })
-        }
-      } catch (error) {
-        console.error(`Error checking donation for campaign ${campaign.address}:`, error)
-      }
+      const details = allDetails[i]
+      if (!details) continue
+
+      const now = Math.floor(Date.now() / 1000)
+      const isExpired = Number(details.deadline) < now
+      const goalUsdc = Number(formatUnits(details.goal, 6))
+      const raisedUsdc = Number(formatUnits(details.amountRaised, 6))
+      const hasReachedGoal = raisedUsdc >= goalUsdc
+
+      const metadata = await fetchMetadata(details.metadataURI)
+
+      donations.push({
+        campaignAddress: allAddresses[i],
+        campaignTitle: metadata.title,
+        amountUsdc: Number(formatUnits(donationAmount, 6)),
+        donatedAt: new Date(),
+        campaignStatus: isExpired
+          ? hasReachedGoal || !details.goalBased
+            ? "ended"
+            : "refunding"
+          : details.withdrawn
+            ? "withdrawn"
+            : "active",
+      })
     }
 
     return donations
@@ -298,13 +313,10 @@ export async function fetchDonationsByUser(
 }
 
 export async function fetchFeaturedCampaigns(publicClient?: PublicClient): Promise<Campaign[]> {
-  if (!publicClient) {
-    return []
-  }
+  if (!publicClient) return []
 
   try {
     const allCampaigns = await fetchAllCampaigns(publicClient)
-    // Sort by amount raised and take top 3
     return allCampaigns.sort((a, b) => b.raisedUsdc - a.raisedUsdc).slice(0, 3)
   } catch (error) {
     console.error("Error fetching featured campaigns:", error)
@@ -324,9 +336,19 @@ export function shortenAddress(address: string, chars = 4): string {
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`
 }
 
-export function getTimeRemaining(deadline: Date): string {
+export function getTimeRemaining(deadline: Date | string | number): string {
   const now = new Date()
-  const diff = deadline.getTime() - now.getTime()
+
+  let deadlineDate: Date
+  if (deadline instanceof Date) {
+    deadlineDate = deadline
+  } else if (typeof deadline === "string") {
+    deadlineDate = new Date(deadline)
+  } else {
+    deadlineDate = new Date(deadline * 1000)
+  }
+
+  const diff = deadlineDate.getTime() - now.getTime()
 
   if (diff <= 0) return "Ended"
 
