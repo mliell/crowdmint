@@ -3,12 +3,12 @@
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { useAccount, useConnect, usePublicClient } from "wagmi"
+import { useAccount, useConnect } from "wagmi"
 import { injected } from "wagmi/connectors"
-import { fetchDonationsByUser, formatUsdc } from "@/lib/campaigns"
+import { formatUsdc } from "@/lib/campaigns"
+import { useMyDonations } from "@/hooks/use-campaigns"
 import type { Donation } from "@/types/campaign"
 import { Wallet, ExternalLink, Heart } from "lucide-react"
-import useSWR from "swr"
 
 const statusColors: Record<Donation["campaignStatus"], string> = {
   active: "bg-mint-pulse/10 text-mint-pulse",
@@ -19,17 +19,13 @@ const statusColors: Record<Donation["campaignStatus"], string> = {
 
 export default function MyDonationsPage() {
   const { address, isConnected } = useAccount()
-  const publicClient = usePublicClient()
   const { connect } = useConnect()
 
   const handleConnect = () => {
     connect({ connector: injected() })
   }
 
-  const { data: donations = [], isLoading } = useSWR<Donation[]>(
-    isConnected && address && publicClient ? `my-donations-${address}` : null,
-    () => fetchDonationsByUser(address!, publicClient || undefined),
-  )
+  const { data: donations = [], isLoading } = useMyDonations()
 
   if (!isConnected) {
     return (

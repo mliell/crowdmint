@@ -4,10 +4,8 @@ import { useState, useMemo } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { CampaignCard } from "@/components/campaign/campaign-card"
-import { fetchAllCampaigns } from "@/lib/campaigns"
-import type { Campaign } from "@/types/campaign"
+import { useAllCampaigns } from "@/hooks/use-campaigns"
 import { Search } from "lucide-react"
-import useSWR from "swr"
 
 type FilterType = "all" | "goal-based" | "flexible"
 type FilterStatus = "all" | "active" | "ended"
@@ -15,18 +13,9 @@ type FilterStatus = "all" | "active" | "ended"
 export default function CampaignsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<FilterType>("all")
-  const [statusFilter, setStatusFilter] = useState<FilterStatus>("all")
+  const [statusFilter, setStatusFilter] = useState<FilterStatus>("active")
 
-  const { data: campaigns = [], isLoading } = useSWR<Campaign[]>(
-    "campaigns",
-    fetchAllCampaigns,
-    {
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false,
-      refreshInterval: 60000,
-      dedupingInterval: 30000,
-    }
-  )
+  const { data: campaigns = [], isLoading } = useAllCampaigns()
 
   const filteredCampaigns = useMemo(() => {
     return campaigns.filter((campaign) => {

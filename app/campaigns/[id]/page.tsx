@@ -15,18 +15,17 @@ import { useWeb3Clients } from "@/hooks/use-web3-client"
 import { useUsdcBalance } from "@/hooks/use-usdc-balance"
 import { arcTestnet } from "@/config/web3"
 import {
-  fetchCampaignByAddress,
   formatUsdc,
   shortenAddress,
   getTimeRemaining,
   getProgressPercent,
 } from "@/lib/campaigns"
-import { donateToCampaign, approveUsdc, readUsdcAllowance } from "@/lib/contracts"
+import { donateToCampaign, approveUsdc, readUsdcAllowance, endCampaign, sweepUnclaimedFunds } from "@/lib/contracts"
 import { getAddressExplorerUrl } from "@/config/web3"
-import type { Campaign } from "@/types/campaign"
+import { useCampaign, useInvalidateCampaigns } from "@/hooks/use-campaigns"
 import { parseUnits, formatUnits } from "viem"
-import { Clock, Users, ExternalLink, Wallet, ArrowLeft, CheckCircle } from "lucide-react"
-import useSWR from "swr"
+import { Clock, Users, ExternalLink, Wallet, ArrowLeft, CheckCircle, AlertTriangle, Timer, Zap } from "lucide-react"
+import { DonorsModal } from "@/components/campaign/donors-modal"
 import { toast } from "sonner"
 
 export default function CampaignDetailsPage({
@@ -50,14 +49,66 @@ export default function CampaignDetailsPage({
   const [isApproving, setIsApproving] = useState(false)
   const [donationSuccess, setDonationSuccess] = useState(false)
 
-  const {
-    data: campaign,
-    isLoading,
-    mutate,
-  } = useSWR<Campaign | null>(
-    publicClient ? `campaign-${id}` : null,
-    () => fetchCampaignByAddress(id as `0x${string}`, publicClient || undefined),
-  )
+  const { data: campaign, isLoading } = useCampaign(id)
+  const { invalidateCampaign, invalidateDonations, invalidateAll } = useInvalidateCampaigns()
+  const [isEndingCampaign, setIsEndingCampaign] = useState(false)
+  const [isSweeping, setIsSweeping] = useState(false)
+
+  // Grace period: 6 * 30 days = 180 days (matches contract WITHDRAWAL_GRACE_PERIOD)
+  const GRACE_PERIOD_DAYS = 180
+  const gracePeriodEnd = campaign
+    ? new Date(campaign.deadline.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000)
+    : null
+  const isGracePeriodOver = gracePeriodEnd ? new Date() >= gracePeriodEnd : false
+  const isCreator = campaign && address
+    ? campaign.creator.toLowerCase() === address.toLowerCase()
+    : false
+
+  const handleEndCampaign = async () => {
+    if (!campaign || !publicClient || !walletClient || !address) return
+
+    setIsEndingCampaign(true)
+    try {
+      toast.info("Ending campaign...")
+      const hash = await endCampaign(campaign.address, publicClient, walletClient, address)
+      toast.success(`Transaction sent: ${hash.slice(0, 10)}...`)
+      await publicClient.waitForTransactionReceipt({ hash })
+      toast.success("Campaign ended successfully!")
+      invalidateCampaign(id)
+    } catch (error: any) {
+      console.error("Error ending campaign:", error)
+      toast.error(error?.message || "Failed to end campaign.")
+    } finally {
+      setIsEndingCampaign(false)
+    }
+  }
+
+  const handleSweep = async () => {
+    if (!campaign || !publicClient || !walletClient || !address) return
+
+    setIsSweeping(true)
+    try {
+      // Sweep campaign funds (DepositType 0 = CampaignFunds)
+      toast.info("Sweeping unclaimed funds to vault...")
+      const hash = await sweepUnclaimedFunds(
+        campaign.address,
+        campaign.creator,
+        0, // CampaignFunds
+        publicClient,
+        walletClient,
+        address,
+      )
+      toast.success(`Transaction sent: ${hash.slice(0, 10)}...`)
+      await publicClient.waitForTransactionReceipt({ hash })
+      toast.success("Funds swept to CrowdMint Vault!")
+      invalidateAll()
+    } catch (error: any) {
+      console.error("Error sweeping:", error)
+      toast.error(error?.message || "Failed to sweep funds.")
+    } finally {
+      setIsSweeping(false)
+    }
+  }
 
   const handleDonate = async () => {
     if (!isConnected || !address || !donationAmount || !campaign) {
@@ -124,7 +175,7 @@ export default function CampaignDetailsPage({
 
         toast.info(`Approving ${formatUsdc(Number(formatUnits(amountToApprove, 6)))} USDC...`)
         try {
-          const approveHash = await approveUsdc(campaign.address, amountToApprove, currentWalletClient, address)
+          const approveHash = await approveUsdc(campaign.address, amountToApprove, publicClient, currentWalletClient, address)
           toast.success(`Approval transaction sent: ${approveHash.slice(0, 10)}...`)
 
           await publicClient.waitForTransactionReceipt({ hash: approveHash })
@@ -143,7 +194,7 @@ export default function CampaignDetailsPage({
       setIsDonating(true)
 
       toast.info("Processing donation...")
-      const donateHash = await donateToCampaign(campaign.address, amount, currentWalletClient, address)
+      const donateHash = await donateToCampaign(campaign.address, amount, publicClient, currentWalletClient, address)
       toast.success(`Donation transaction sent: ${donateHash.slice(0, 10)}...`)
 
       await publicClient.waitForTransactionReceipt({ hash: donateHash })
@@ -153,7 +204,8 @@ export default function CampaignDetailsPage({
       setDonationSuccess(true)
       setDonationAmount("")
 
-      mutate()
+      invalidateCampaign(id)
+      if (address) invalidateDonations(address)
     } catch (error: any) {
       console.error("Error donating:", error)
       toast.error(error?.message || "Failed to donate. Please try again.")
@@ -278,8 +330,93 @@ export default function CampaignDetailsPage({
                   <span className="text-deep-trust font-medium">{campaign.category}</span>
                 </div>
               )}
+              {/* Withdrawal fee info — visible to creator */}
+              {isCreator && !campaign.withdrawn && campaign.raisedUsdc > 0 && (
+                <div className="pt-3 border-t border-crowd-silver">
+                  <div className="flex items-center justify-between">
+                    <span className="text-carbon-clarity">Withdrawal Fee</span>
+                    <span className="text-vault-gold font-medium">0.5%</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-carbon-clarity text-sm">Net Amount</span>
+                    <span className="text-deep-trust font-medium text-sm">
+                      ~{formatUsdc(campaign.raisedUsdc * 0.995)} USDC
+                    </span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
+
+          {/* Grace Period & Actions — only shown for expired campaigns */}
+          {campaign.isExpired && (
+            <Card className="border-crowd-silver">
+              <CardHeader>
+                <CardTitle className="text-deep-trust flex items-center gap-2">
+                  <Timer className="h-5 w-5" />
+                  Post-Expiration Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Grace period status */}
+                {gracePeriodEnd && (
+                  <div className={`p-3 rounded-lg ${isGracePeriodOver ? "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900" : "bg-vault-gold/10 border border-vault-gold/20"}`}>
+                    <div className="flex items-start gap-2">
+                      {isGracePeriodOver ? (
+                        <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                      ) : (
+                        <Timer className="h-4 w-4 text-vault-gold mt-0.5 shrink-0" />
+                      )}
+                      <div>
+                        <p className={`text-sm font-medium ${isGracePeriodOver ? "text-red-600 dark:text-red-400" : "text-vault-gold"}`}>
+                          {isGracePeriodOver
+                            ? "Grace period ended"
+                            : `Grace period: ${Math.ceil((gracePeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24))} days remaining`}
+                        </p>
+                        <p className="text-xs text-carbon-clarity mt-1">
+                          {isGracePeriodOver
+                            ? "Unclaimed funds can be swept to the CrowdMint Vault by anyone."
+                            : `The creator has until ${gracePeriodEnd.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })} to withdraw funds. After that, unclaimed funds go to the Vault.`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* End Campaign button — creator only, if campaign is still active */}
+                {isCreator && campaign.isActive && (
+                  <Button
+                    onClick={handleEndCampaign}
+                    disabled={isEndingCampaign || !walletClient}
+                    className="w-full bg-deep-trust hover:bg-deep-trust/90 text-white font-semibold"
+                  >
+                    {isEndingCampaign ? "Ending..." : "End Campaign"}
+                  </Button>
+                )}
+
+                {/* Sweep button — permissionless, after grace period, if funds not yet withdrawn */}
+                {isGracePeriodOver && !campaign.withdrawn && campaign.raisedUsdc > 0 && (
+                  <>
+                    {/* Only show sweep for eligible campaigns */}
+                    {(!campaign.goalBased || campaign.hasReachedGoal) && (
+                      <Button
+                        onClick={handleSweep}
+                        disabled={isSweeping || !walletClient || !isConnected}
+                        variant="outline"
+                        className="w-full border-vault-gold text-vault-gold hover:bg-vault-gold/10 font-semibold"
+                      >
+                        <Zap className="mr-2 h-4 w-4" />
+                        {isSweeping ? "Sweeping..." : "Sweep to Vault"}
+                      </Button>
+                    )}
+                    <p className="text-xs text-carbon-clarity text-center">
+                      Anyone can sweep unclaimed funds to the CrowdMint Vault after the grace period.
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -310,8 +447,31 @@ export default function CampaignDetailsPage({
                 </div>
               </div>
 
+              {/* View Donors button */}
+              {(campaign.backersCount ?? 0) > 0 && (
+                <DonorsModal campaignAddress={campaign.address} campaignTitle={campaign.title}>
+                  <Button
+                    variant="outline"
+                    className="w-full border-crowd-silver text-carbon-clarity hover:border-deep-trust hover:text-deep-trust bg-transparent"
+                  >
+                    <Users className="mr-2 h-4 w-4" />
+                    View All Donors
+                  </Button>
+                </DonorsModal>
+              )}
+
               <div className="pt-4 border-t border-crowd-silver">
-                {!isConnected ? (
+                {campaign.isExpired || !campaign.isActive ? (
+                  <div className="text-center py-4">
+                    <p className="text-carbon-clarity text-sm">
+                      {campaign.withdrawn
+                        ? "This campaign has been withdrawn."
+                        : campaign.isExpired
+                          ? "This campaign has expired. Donations are no longer accepted."
+                          : "This campaign is no longer active."}
+                    </p>
+                  </div>
+                ) : !isConnected ? (
                   <div className="text-center">
                     <p className="text-carbon-clarity mb-4">Connect your wallet to donate to this campaign.</p>
                     <Button
